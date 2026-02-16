@@ -4,6 +4,7 @@ set -euo pipefail
 VM_NAME="openclaw"
 BASE_IMAGE="ghcr.io/cirruslabs/macos-tahoe-base:latest"
 SHARED_DIR="$HOME/openclaw-shared"
+DISK_SIZE_GB=100
 
 echo "=== OpenClaw VM Setup ==="
 
@@ -22,7 +23,10 @@ if tart list | grep -q "[[:space:]]$VM_NAME[[:space:]]"; then
         echo "Deleting existing VM..."
         tart delete "$VM_NAME"
     else
-        echo "Keeping existing VM. Use ./run.sh to start it."
+        echo "Keeping existing VM."
+        echo "Expanding disk to ${DISK_SIZE_GB}GB (for macOS updates)..."
+        tart set "$VM_NAME" --disk-size "$DISK_SIZE_GB"
+        echo "Run './run.sh' to start the VM."
         exit 0
     fi
 fi
@@ -33,6 +37,9 @@ tart pull "$BASE_IMAGE"
 
 echo "Creating VM: $VM_NAME"
 tart clone "$BASE_IMAGE" "$VM_NAME"
+
+echo "Expanding disk to ${DISK_SIZE_GB}GB (for macOS updates)..."
+tart set "$VM_NAME" --disk-size "$DISK_SIZE_GB"
 
 echo ""
 echo "=== Setup Complete ==="
