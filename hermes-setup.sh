@@ -120,6 +120,7 @@ docker pull "$HERMES_SANDBOX_IMAGE"
 
 # 6. Create the data dir (entrypoint will populate it on first 'setup' run) -
 mkdir -p "$HERMES_HOME"
+chmod 700 "$HERMES_HOME"
 
 # 7. Docker network so the dashboard can reach the gateway by container name -
 if ! docker network inspect "$HERMES_NETWORK" >/dev/null 2>&1; then
@@ -144,6 +145,8 @@ Next steps (profile: $HERMES_PROFILE_NAME, data: $HERMES_HOME):
        - terminal.docker_mount_cwd_to_workspace: false
        - approvals.mode: manual
      Edit directly or use 'hermes config set …' inside a one-shot container.
+     Then restrict the credentials file:
+       chmod 600 $HERMES_HOME/.env
 
   3a. Open an interactive chat:
        docker run -it --rm \\
