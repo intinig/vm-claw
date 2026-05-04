@@ -177,13 +177,26 @@ func runBootstrapFinalize(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintln(out, "[OK]    BlueBubbles responding")
 
-	if alreadyWired(ctx, home, ip) {
-		fmt.Fprintln(out, "[SKIP]  Hermes already wired (env keys present, gateway has matching --add-host)")
-	} else {
+	// Three states for the Hermes container:
+	//   1. Not wired (env missing keys / wrong --add-host): full wire (prompts password).
+	//   2. Wired but container stopped (e.g., user ran `docker stop hermes` for
+	//      `hermes setup`): just `docker start` it — no prompt, config is intact.
+	//   3. Wired and running: nothing to do.
+	docker := hermes.NewDocker()
+	switch {
+	case !alreadyWired(ctx, home, ip):
 		fmt.Fprintln(out, "==> Wiring Hermes BlueBubbles connector")
 		if err := runHermesWireCmd(ctx, out, ip); err != nil {
 			return err
 		}
+	case !containerRunning(ctx, docker, "hermes"):
+		fmt.Fprintln(out, "==> Hermes container stopped; starting")
+		if _, err := vm.DefaultExecutor.Run(ctx, "docker", "start", "hermes"); err != nil {
+			return fmt.Errorf("docker start hermes: %w", err)
+		}
+		fmt.Fprintln(out, "[OK]    started")
+	default:
+		fmt.Fprintln(out, "[SKIP]  Hermes already wired and running")
 	}
 
 	fmt.Fprintln(out, "==> Running doctor")
@@ -229,6 +242,18 @@ func probeBlueBubblesLiveness(ctx context.Context, ip string, port int) error {
 	default:
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+}
+
+// containerRunning is a small wrapper that swallows errors and returns
+// false on any failure — finalize uses this only as a branch hint, not
+// a hard precondition. The downstream `doctor` step is the source of
+// truth for "is the gateway actually serving."
+func containerRunning(ctx context.Context, d *hermes.Docker, name string) bool {
+	running, err := d.ContainerRunning(ctx, name)
+	if err != nil {
+		return false
+	}
+	return running
 }
 
 // alreadyWired reports whether the Hermes container is already running
