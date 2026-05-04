@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VM_NAME="openclaw"
+VM_NAME="bridge-vm"
 
 # Check if VM exists
 if ! tart list | grep -q "[[:space:]]$VM_NAME[[:space:]]"; then
