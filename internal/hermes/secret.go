@@ -28,6 +28,13 @@ func persistSecret(path, secret string) error {
 	if err := os.MkdirAll(parentDir(path), 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", parentDir(path), err)
 	}
+	// MkdirAll only applies the mode to newly-created dirs. If the parent
+	// already exists at a looser mode (very common: the upstream Hermes
+	// setup wizard creates ~/.hermes at the user's umask default 0755),
+	// tighten it now. Best-effort: if we don't own the dir, skip silently.
+	if err := os.Chmod(parentDir(path), 0o700); err != nil && !os.IsPermission(err) {
+		return fmt.Errorf("chmod %s: %w", parentDir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}

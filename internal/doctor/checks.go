@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	urlpkg "net/url"
 	"strings"
 	"time"
 
@@ -108,7 +109,7 @@ func DefaultChecks(cfg Config) []struct {
 			}
 			url := fmt.Sprintf("http://%s:%d/api/v1/server/info", ip, cfg.BBPort)
 			if cfg.BBPassword != "" {
-				url += "?password=" + cfg.BBPassword
+				url += "?password=" + urlpkg.QueryEscape(cfg.BBPassword)
 			}
 			if err := probeHTTP(ctx, url, 3*time.Second); err != nil {
 				return Result{Status: StatusFail, Message: err.Error()}
@@ -141,7 +142,7 @@ func DefaultChecks(cfg Config) []struct {
 			}
 			url := "http://bridge-vm:" + fmt.Sprintf("%d", cfg.BBPort) + "/api/v1/server/info"
 			if cfg.BBPassword != "" {
-				url += "?password=" + cfg.BBPassword
+				url += "?password=" + urlpkg.QueryEscape(cfg.BBPassword)
 			}
 			args := []string{
 				"exec", cfg.HermesGateway,

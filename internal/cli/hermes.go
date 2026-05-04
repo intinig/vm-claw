@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,11 @@ func init() {
 			fmt.Fprintln(out, "==> Preparing ~/.hermes")
 			if err := os.MkdirAll(hcfg.HermesHome, 0o700); err != nil {
 				return fmt.Errorf("mkdir %s: %w", hcfg.HermesHome, err)
+			}
+			// MkdirAll only applies the mode to newly-created dirs.
+			// Tighten if pre-existing (likely 0755 from the Hermes wizard).
+			if err := os.Chmod(hcfg.HermesHome, 0o700); err != nil && !os.IsPermission(err) {
+				return fmt.Errorf("chmod %s: %w", hcfg.HermesHome, err)
 			}
 
 			fmt.Fprintln(out, "==> Ensuring docker network")
@@ -180,7 +186,7 @@ func promptPassword(w interface {
 func probeBlueBubblesAuth(ctx context.Context, ip string, port int, password string) error {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	url := fmt.Sprintf("http://%s:%d/api/v1/server/info?password=%s", ip, port, password)
+	url := fmt.Sprintf("http://%s:%d/api/v1/server/info?password=%s", ip, port, urlpkg.QueryEscape(password))
 	req, err := http.NewRequestWithContext(cctx, "GET", url, nil)
 	if err != nil {
 		return err

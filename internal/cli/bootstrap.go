@@ -94,6 +94,11 @@ func runBootstrap(cmd *cobra.Command, _ []string) error {
 	if err := os.MkdirAll(hcfg.HermesHome, 0o700); err != nil {
 		return err
 	}
+	// MkdirAll only applies the mode to newly-created dirs.
+	// Tighten if pre-existing.
+	if err := os.Chmod(hcfg.HermesHome, 0o700); err != nil && !os.IsPermission(err) {
+		return fmt.Errorf("chmod %s: %w", hcfg.HermesHome, err)
+	}
 	if err := hermes.NewDocker().EnsureNetwork(ctx, hcfg.Network); err != nil {
 		return err
 	}
