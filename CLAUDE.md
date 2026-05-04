@@ -140,6 +140,17 @@ tart delete <vm-name>
 - `--dir=<name>:<host-path>:ro` — Mounts read-only shared folder. Optional in the
   current scope; not load-bearing.
 
+## Recovery paths
+
+When something silently breaks, work down this list before deeper debugging:
+
+1. **`./host/healthcheck.sh`** — six-line green/red status across the chain.
+2. **VM not booting / no IP** — `tart list` and `tart ip bridge-vm`. If the VM exists but has no IP, `./run.sh` is probably not active in any terminal; either run it again or load the LaunchAgent (`./host/install-vm-launchagent.sh`).
+3. **Container can't reach `bridge-vm`** — usually means the gateway container was started without `--add-host bridge-vm:$(tart ip bridge-vm)`. Restart the container with the flag (see the spec's runbook §E for the exact docker run).
+4. **iMessage stops sending** — log into the VM's GUI, open Messages.app, confirm iMessage is still active. macOS sleep on the VM is the most common cause; verify "Display sleep when on power adapter" is still off.
+5. **Apple ID activation loop** — sign out of the Apple ID in Messages (not System Settings), wait 30 seconds, sign back in. If persistent, recreate the Apple ID; running iMessage in a VM is a grey area with Apple.
+6. **VM is unrecoverable / suspect / over-updated** — `./destroy.sh && ./setup.sh && ./run.sh`, then re-run the runbook. The bridge identity's Apple ID is portable; only the local Messages history and BlueBubbles password are lost.
+
 ## Architecture
 
 Shell-script based project. Expected structure:
