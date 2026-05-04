@@ -143,20 +143,29 @@ bridge_vm_ip() {
 }
 
 BRIDGE_IP="$(bridge_vm_ip)"
+# Defensive: if tart returns an unexpected non-IPv4 string (some tart versions
+# print errors to stdout when the VM is in a weird state), drop it rather than
+# splice a malformed token into the printed docker run.
+if [[ -n "$BRIDGE_IP" && ! "$BRIDGE_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Warning: unexpected output from 'tart ip $BRIDGE_VM_NAME': '$BRIDGE_IP' — using \$(tart ip ...) substitution instead." >&2
+    BRIDGE_IP=""
+fi
 if [[ -n "$BRIDGE_IP" ]]; then
     ADD_HOST_FRAGMENT="--add-host bridge-vm:$BRIDGE_IP"
     BRIDGE_IP_NOTE=""
 else
     # VM not up yet: print a literal $(tart ip ...) substitution that the
-    # user can copy-paste — docker will run the lookup at container start.
-    # The leading backslash escapes the $ so the unquoted heredoc preserves
-    # the substitution text instead of expanding it now.
+    # user can copy-paste — their shell expands it at command-run time before
+    # docker sees the value. The leading backslash escapes the $ so the
+    # unquoted heredoc preserves the substitution text instead of expanding
+    # it during this script's execution.
     ADD_HOST_FRAGMENT="--add-host bridge-vm:\$(tart ip $BRIDGE_VM_NAME)"
     BRIDGE_IP_NOTE="
 Note: Tart VM '$BRIDGE_VM_NAME' is not running yet, so the commands
-above use \$(tart ip $BRIDGE_VM_NAME) — docker resolves the IP at
-container start. Run Phase 2 of the migration plan first, or just
-re-run this script after the VM is up to bake in a literal IP."
+above use \$(tart ip $BRIDGE_VM_NAME) — your shell expands that to the
+VM's IP when you run the command, before docker sees it. Run Phase 2
+of the migration plan first, or re-run this script after the VM is up
+to bake in a literal IP."
 fi
 
 cat <<EOF
