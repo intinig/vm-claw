@@ -12,12 +12,12 @@ the second Apple identity and the Messages.app stack that goes with it.
 
 Two components, used **together** (not independent paths):
 
-1. **Hermes on host** (`hermes-setup.sh`) — bootstraps Colima + docker, runs the
-   `nousresearch/hermes-agent` container with `~/.hermes` bind-mounted to `/opt/data`.
-   Following [the Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
-2. **iMessage bridge VM** (`setup.sh` / `run.sh` / `destroy.sh`) — Tart-based macOS
-   guest, softnet networking, one dedicated user signed in to the bridge Apple ID.
-   Inside, a bridge service exposes an API Hermes calls.
+1. **Hermes on host** (`vmclaw hermes bootstrap`) — bootstraps Colima + docker, runs
+   the `nousresearch/hermes-agent` container with `~/.hermes` bind-mounted to
+   `/opt/data`. Following [the Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
+2. **iMessage bridge VM** (`vmclaw vm <verb>`) — Tart-based macOS guest, softnet
+   networking, one dedicated user signed in to the bridge Apple ID. Inside, a bridge
+   service exposes an API Hermes calls.
 
 The VM is **not** an isolation boundary for Hermes (Hermes is already containerized
 and is trusted relative to this project). The VM exists to give iMessage a clean,
@@ -30,7 +30,7 @@ that as known-stale, not a directive. Authoritative current direction lives in
 
 ## Hermes-Path Configuration Constraints
 
-`hermes-setup.sh` deliberately does **not** seed `~/.hermes/config.yaml` — the
+`vmclaw hermes bootstrap` deliberately does **not** seed `~/.hermes/config.yaml` — the
 container entrypoint copies the default on the first `setup` run (this is the
 upstream-documented flow). Hardening is applied by the user afterward, by editing
 the file or via `hermes config set`.
@@ -65,7 +65,7 @@ dashboard container).
 
 Multiple independent agents per host
 ([upstream pattern](https://hermes-agent.nousresearch.com/docs/user-guide/docker#multi-profile-support)).
-Knobs (env vars consumed by `hermes-setup.sh`):
+Knobs (env vars consumed by `vmclaw hermes bootstrap`):
 
 - `HERMES_PROFILE_NAME` — profile name. Default `default`. Drives the defaults below.
 - `HERMES_HOME` — host data dir. Default `~/.hermes` for `default`, else
@@ -144,21 +144,22 @@ tart delete <vm-name>
 
 When something silently breaks, work down this list before deeper debugging:
 
-1. **`./host/healthcheck.sh`** — six-line green/red status across the chain.
-2. **VM not booting / no IP** — `tart list` and `tart ip bridge-vm`. If the VM exists but has no IP, `./run.sh` is probably not active in any terminal; either run it again or load the LaunchAgent (`./host/install-vm-launchagent.sh`).
+1. **`vmclaw doctor`** — seven-line green/red status across the chain.
+2. **VM not booting / no IP** — `tart list` and `tart ip bridge-vm`. If the VM exists but has no IP, run `vmclaw vm run` in another terminal, or `vmclaw vm install-agent` to load the LaunchAgent.
 3. **Container can't reach `bridge-vm`** — usually means the gateway container was started without `--add-host bridge-vm:$(tart ip bridge-vm)`. Restart the container with the flag (see the spec's runbook §E for the exact docker run).
 4. **iMessage stops sending** — log into the VM's GUI, open Messages.app, confirm iMessage is still active. macOS sleep on the VM is the most common cause; verify "Display sleep when on power adapter" is still off.
 5. **Apple ID activation loop** — sign out of the Apple ID in Messages (not System Settings), wait 30 seconds, sign back in. If persistent, recreate the Apple ID; running iMessage in a VM is a grey area with Apple.
-6. **VM is unrecoverable / suspect / over-updated** — `./destroy.sh && ./setup.sh && ./run.sh`, then re-run the runbook. The bridge identity's Apple ID is portable; only the local Messages history and BlueBubbles password are lost.
+6. **VM is unrecoverable / suspect / over-updated** — `vmclaw vm destroy --yes && vmclaw bootstrap`, then re-run the manual runbook. The bridge identity's Apple ID is portable; only the local Messages history and BlueBubbles password are lost.
 
 ## Architecture
 
-Shell-script based project. Expected structure:
+Go CLI project. Expected structure:
 
-- `hermes-setup.sh` — Colima + Hermes-image bootstrap (host side).
-- `setup.sh` / `run.sh` / `destroy.sh` — Tart VM lifecycle for the iMessage bridge
-  VM. Currently still uses the `openclaw` VM name from the previous scope; rename
-  is tracked in the design spec.
+- `cmd/vmclaw/main.go` + `internal/` — the `vmclaw` CLI binary that owns Tart VM
+  lifecycle (`vmclaw vm <verb>`), Colima/Docker bootstrap (`vmclaw hermes bootstrap`),
+  BlueBubbles env wiring (`vmclaw hermes wire`), end-to-end healthchecks
+  (`vmclaw doctor`), and the orchestrator (`vmclaw bootstrap` + `vmclaw bootstrap finalize`).
+- `Makefile` — `make` to build, `make install` to put the binary on $PATH.
 - `~/.hermes` — host-side dir bind-mounted into the Hermes container as `/opt/data`.
 - `docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md` — design,
   decisions log, migration plan. Authoritative for current direction.

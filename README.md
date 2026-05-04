@@ -4,18 +4,14 @@ Run [Hermes Agent](https://hermes-agent.nousresearch.com/) on a macOS host with 
 sidecar Tart VM that hosts iMessage under a **separate Apple ID**, so the agent can
 send/receive messages without using the host user's iMessage identity.
 
-Two pieces, picked together:
+Two pieces, used together:
 
-- **Hermes on host (Docker via Colima)** — `hermes-setup.sh`, following the
-  [Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
-- **iMessage bridge VM (Tart)** — `setup.sh` / `run.sh` / `destroy.sh`, a macOS guest
+- **Hermes on host (Docker via Colima)** — bootstrapped via `vmclaw hermes bootstrap`,
+  following the [Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
+- **iMessage bridge VM (Tart)** — managed via `vmclaw vm <verb>`, a macOS guest
   with its own user, its own Apple ID, Messages.app signed in, and
   [BlueBubbles Server](https://bluebubbles.app/server/) exposing the bridge protocol
   Hermes calls.
-
-> **Status:** the project is being migrated from its previous OpenClaw scope. The
-> Tart scripts still use the name `openclaw` internally; renaming is tracked in the
-> design spec.
 
 See the [design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md)
 for the full design, including why a VM (vs. a second host user) and the migration
@@ -50,14 +46,16 @@ backend.)
 ### Usage
 
 ```bash
-./hermes-setup.sh
+make install          # build + install vmclaw to ~/go/bin
+vmclaw bootstrap      # creates VM, bootstraps Hermes, installs LaunchAgent,
+                      # generates webhook secret, prints Phase 2 runbook
 ```
 
-This installs Homebrew (if missing), `colima`, the `docker` CLI, and `docker-compose`;
-starts the Colima VM; pre-pulls `nousresearch/hermes-agent` and the inner sandbox
-image; creates `~/.hermes`; and creates a docker network for the gateway/dashboard
-pair to share. The script prints the next-step commands tailored to the chosen
-profile.
+`vmclaw bootstrap` (internally `vmclaw hermes bootstrap`) installs Homebrew (if
+missing), `colima`, the `docker` CLI, and `docker-compose`; starts the Colima VM;
+pre-pulls `nousresearch/hermes-agent` and the inner sandbox image; creates
+`~/.hermes`; and creates a docker network for the gateway/dashboard pair to share.
+It prints next-step commands tailored to the chosen profile.
 
 Tunables (env vars):
 
@@ -128,11 +126,11 @@ Run the setup script once per profile with distinct names and ports:
 ```bash
 HERMES_PROFILE_NAME=work \
   HERMES_GATEWAY_PORT=8642 HERMES_DASHBOARD_PORT=9119 \
-  ./hermes-setup.sh
+  vmclaw hermes bootstrap
 
 HERMES_PROFILE_NAME=personal \
   HERMES_GATEWAY_PORT=8643 HERMES_DASHBOARD_PORT=9120 \
-  ./hermes-setup.sh
+  vmclaw hermes bootstrap
 ```
 
 Each invocation creates `~/.hermes-<profile>/`, a `hermes-net-<profile>` docker
@@ -173,14 +171,16 @@ Plus a trusted device for the bridge Apple ID's 2FA the first time.
 ### Usage
 
 ```bash
-./setup.sh        # download Tahoe base image (~25 GB), create the VM
-./run.sh          # boot it with softnet + shared folder
-./destroy.sh      # delete it
+make install              # build + install vmclaw to ~/go/bin
+vmclaw bootstrap          # creates VM, bootstraps Hermes, installs LaunchAgent,
+                          # generates webhook secret, prints Phase 2 runbook
+# ...do Phase 2 manually inside the VM (Apple ID, Messages.app,
+# BlueBubbles install + webhook config — see docs/superpowers/specs/...)
+vmclaw bootstrap finalize # writes ~/.hermes/.env, restarts Hermes gateway,
+                          # runs doctor
+vmclaw doctor             # spot-check anytime
+vmclaw vm destroy --yes   # tear down the VM (e.g., to rebuild from scratch)
 ```
-
-> Note: as of this writing the scripts still name the VM `openclaw` from the previous
-> project scope. Migration is tracked in the
-> [design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#migration-plan).
 
 After first boot, the VM needs manual setup before Hermes can use it. The full
 runbook is in the
