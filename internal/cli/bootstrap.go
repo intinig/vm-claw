@@ -118,19 +118,11 @@ func runBootstrap(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintln(out, "[OK]    LaunchAgent loaded")
 
-	fmt.Fprintln(out, "==> Generating BlueBubbles webhook secret")
-	secretPath := filepath.Join(hcfg.HermesHome, ".bb-webhook-secret")
-	secret, err := hermes.EnsureSecret(secretPath)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "[OK]    secret stashed at %s\n", secretPath)
-
-	printPhase2Runbook(out, secret, secretPath)
+	printPhase2Runbook(out)
 	return nil
 }
 
-func printPhase2Runbook(out io.Writer, secret, secretPath string) {
+func printPhase2Runbook(out io.Writer) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "================================================================")
 	fmt.Fprintln(out, "==> Pre-Phase-2 setup complete. NEXT STEP: manual VM provisioning.")
@@ -142,11 +134,16 @@ func printPhase2Runbook(out io.Writer, secret, secretPath string) {
 	fmt.Fprintln(out, "2. Inside the VM, complete the runbook in")
 	fmt.Fprintln(out, "   docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#vm-provisioning-runbook")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "3. When configuring BlueBubbles' webhook (step D.8), use this exact value")
-	fmt.Fprintln(out, "   for the `Authorization: Bearer` header:")
+	fmt.Fprintln(out, "3. In BlueBubbles Server → Settings → API → Webhooks, register a webhook")
+	fmt.Fprintln(out, "   pointing at the host's softnet-gateway IP (visible from inside the VM via")
+	fmt.Fprintln(out, "   `route -n get default | awk '/gateway/{print $2}'`):")
 	fmt.Fprintln(out, "")
-	fmt.Fprintf(out, "       Bearer %s\n", secret)
-	fmt.Fprintf(out, "       (also stashed at %s)\n", secretPath)
+	fmt.Fprintln(out, "       http://<softnet-gw-ip>:8645/bluebubbles-webhook")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "   No auth header — Hermes authenticates by sender identity. After the first")
+	fmt.Fprintln(out, "   inbound message, Hermes sends a pairing code via iMessage; approve it on")
+	fmt.Fprintln(out, "   the host with `hermes pairing approve bluebubbles <CODE>` (or pre-allowlist")
+	fmt.Fprintln(out, "   senders via BLUEBUBBLES_ALLOWED_USERS in ~/.hermes/.env).")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "4. When BlueBubbles is up and the webhook is configured, return here and run:")
 	fmt.Fprintln(out, "")
@@ -162,10 +159,6 @@ func runBootstrapFinalize(cmd *cobra.Command, _ []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
-	}
-	secretPath := filepath.Join(home, ".hermes", ".bb-webhook-secret")
-	if _, err := os.Stat(secretPath); os.IsNotExist(err) {
-		return fmt.Errorf("missing %s — run `vmclaw bootstrap` first", secretPath)
 	}
 
 	tart := vm.NewTart()
@@ -241,10 +234,6 @@ func runHermesWireCmd(ctx context.Context, out io.Writer, ip string) error {
 	if err != nil {
 		return err
 	}
-	secret, err := loadSecretOrErr(filepath.Join(home, ".hermes", ".bb-webhook-secret"))
-	if err != nil {
-		return err
-	}
 	password, err := promptPassword(out, "BlueBubbles admin password: ")
 	if err != nil {
 		return err
@@ -253,9 +242,9 @@ func runHermesWireCmd(ctx context.Context, out io.Writer, ip string) error {
 		return fmt.Errorf("password rejected by BlueBubbles: %w", err)
 	}
 	updates := map[string]string{
-		hermes.BluebubblesServerURLKey:     "http://bridge-vm:" + fmt.Sprintf("%d", defaultBBPort),
-		hermes.BluebubblesPasswordKey:      password,
-		hermes.BluebubblesWebhookSecretKey: secret,
+		hermes.BluebubblesServerURLKey:   "http://bridge-vm:" + fmt.Sprintf("%d", defaultBBPort),
+		hermes.BluebubblesPasswordKey:    password,
+		hermes.BluebubblesWebhookHostKey: "0.0.0.0",
 	}
 	envPath := filepath.Join(home, ".hermes", ".env")
 	if err := hermes.UpdateEnvFile(envPath, updates); err != nil {

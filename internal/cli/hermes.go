@@ -7,7 +7,6 @@ import (
 	urlpkg "net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/intinig/vm-claw/internal/hermes"
@@ -93,13 +92,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			secretPath := filepath.Join(home, ".hermes", ".bb-webhook-secret")
 			envPath := filepath.Join(home, ".hermes", ".env")
-
-			secret, err := loadSecretOrErr(secretPath)
-			if err != nil {
-				return err
-			}
 
 			tart := vm.NewTart()
 			ip, err := tart.IP(ctx, vmName)
@@ -122,9 +115,9 @@ func init() {
 
 			// Persist BlueBubbles connector keys.
 			updates := map[string]string{
-				hermes.BluebubblesServerURLKey:     "http://bridge-vm:" + fmt.Sprintf("%d", defaultBBPort),
-				hermes.BluebubblesPasswordKey:      password,
-				hermes.BluebubblesWebhookSecretKey: secret,
+				hermes.BluebubblesServerURLKey:   "http://bridge-vm:" + fmt.Sprintf("%d", defaultBBPort),
+				hermes.BluebubblesPasswordKey:    password,
+				hermes.BluebubblesWebhookHostKey: "0.0.0.0",
 			}
 			if err := hermes.UpdateEnvFile(envPath, updates); err != nil {
 				return err
@@ -145,18 +138,6 @@ func init() {
 
 	hermesCmd.AddCommand(hermesBootstrapCmd, hermesWireCmd)
 	rootCmd.AddCommand(hermesCmd)
-}
-
-// loadSecretOrErr returns a friendly error if the secret file is missing.
-func loadSecretOrErr(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("missing %s — run `vmclaw bootstrap` first to generate it", path)
-		}
-		return "", err
-	}
-	return strings.TrimSpace(string(b)), nil
 }
 
 // promptPassword prints a prompt to w and reads a masked password from stdin.

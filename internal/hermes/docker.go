@@ -113,6 +113,10 @@ func (d *Docker) RunHermesGateway(ctx context.Context, cfg HermesConfig, bridgeI
 		"--add-host", "bridge-vm:" + bridgeIP,
 		"-v", cfg.HermesHome + ":/opt/data",
 		"-p", fmt.Sprintf("%d:8642", cfg.GatewayPort),
+		// BlueBubbles webhook listener — Hermes binds this internally
+		// (defaults BLUEBUBBLES_WEBHOOK_HOST=0.0.0.0 set in ~/.hermes/.env).
+		// Bridge VM POSTs incoming-message events here.
+		"-p", "8645:8645",
 		"--memory", "4g",
 		"--cpus", "2",
 		"--shm-size", "1g",

@@ -7,14 +7,21 @@ import (
 	"strings"
 )
 
-// BlueBubbles connector key names. **Placeholders** until the actual
-// names are confirmed against current Hermes docs (see the spec's
-// "Open / deferred items" section). Update these in a follow-up commit
-// once the BlueBubbles connector docs are read.
+// BlueBubbles connector key names. Confirmed against Hermes docs at
+// https://hermes-agent.nousresearch.com/docs/user-guide/messaging/bluebubbles.
+//
+// Hermes' BlueBubbles connector authenticates incoming webhooks by
+// SENDER IDENTITY (DM-pairing flow or BLUEBUBBLES_ALLOWED_USERS
+// allowlist), NOT a shared secret. There is no webhook-secret env var.
+//
+// BLUEBUBBLES_WEBHOOK_HOST defaults to 127.0.0.1 inside the Hermes
+// container, which means Docker's `-p` port-publish has no effect
+// because the listener never binds outside the container's loopback.
+// We force 0.0.0.0 so the published port is reachable from the bridge VM.
 const (
-	BluebubblesServerURLKey     = "BLUEBUBBLES_SERVER_URL"
-	BluebubblesPasswordKey      = "BLUEBUBBLES_PASSWORD"
-	BluebubblesWebhookSecretKey = "BLUEBUBBLES_WEBHOOK_SECRET"
+	BluebubblesServerURLKey   = "BLUEBUBBLES_SERVER_URL"
+	BluebubblesPasswordKey    = "BLUEBUBBLES_PASSWORD"
+	BluebubblesWebhookHostKey = "BLUEBUBBLES_WEBHOOK_HOST"
 )
 
 // parseEnvFile parses a dotenv-style file body into a map. Lines starting
@@ -94,6 +101,14 @@ func renderEnvFile(original string, updates map[string]string) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// parentDir returns path's directory.
+func parentDir(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[:i]
+	}
+	return "."
 }
 
 // UpdateEnvFile reads the env file at path (or starts from empty if
