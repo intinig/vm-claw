@@ -221,3 +221,17 @@ Captured during the brainstorming session that produced this spec.
 - **Hermes BlueBubbles connector env var names.** Names like `BLUEBUBBLES_SERVER_URL` / `BLUEBUBBLES_PASSWORD` / `BLUEBUBBLES_WEBHOOK_SECRET` are placeholders. The actual key names come from a manual lookup against current Hermes docs; output is a one-commit update to constants in `internal/hermes/envfile.go`. Deferred per the bridge-VM spec's "Open implementation details" section.
 - **BlueBubbles liveness probe path.** The `/api/v1/ping` (or equivalent) endpoint used by `bootstrap finalize` step 3 needs confirmation against BlueBubbles' actual API. Confirm at implementation time; fall back to `/api/v1/server/info?password=<entered>` if no auth-less endpoint exists (probe with the entered password instead, and skip the separate auth validation).
 - **Cobra command grouping.** Cobra supports command groups in help output. Worth applying once layout settles: `vm`, `hermes`, `top-level` groups so `vmclaw --help` shows them clustered.
+
+
+---
+
+**Update 2026-05-04: webhook-auth model corrected.** Phase 4.1 research
+against [Hermes' BlueBubbles connector docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/bluebubbles)
+confirmed there is no shared webhook secret. Hermes authenticates
+incoming webhooks by sender identity (DM-pairing or
+`BLUEBUBBLES_ALLOWED_USERS`). The webhook listener runs in the Hermes
+container on port `8645` at path `/bluebubbles-webhook` (separate
+from the gateway on `8642`). The implementation was corrected to
+match: webhook-secret machinery removed, webhook port published,
+`BLUEBUBBLES_WEBHOOK_HOST=0.0.0.0` written to `~/.hermes/.env`. The
+runbook printed by `vmclaw bootstrap` now reflects this.

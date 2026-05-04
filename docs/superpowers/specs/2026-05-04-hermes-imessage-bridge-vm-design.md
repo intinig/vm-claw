@@ -301,3 +301,18 @@ in this spec's migration plan are subsumed by the
 runbook section above (`#vm-provisioning-runbook`) is still
 authoritative for the manual Phase 2 work; everything automatable now
 lives behind `vmclaw <subcommand>`.
+
+
+---
+
+**Update 2026-05-04 (Hermes connector reality check).** The "shared
+webhook secret" assumption in the Webhook auth scheme decision is
+wrong. Hermes' BlueBubbles connector authenticates by sender identity
+(DM-pairing flow or `BLUEBUBBLES_ALLOWED_USERS` allowlist). The
+webhook listener runs in the Hermes container on port `8645` at path
+`/bluebubbles-webhook`, separate from the gateway. See the
+[vmclaw spec's update note](./2026-05-04-vmclaw-cli-design.md) and
+[Hermes' BlueBubbles docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/bluebubbles).
+The provisioning runbook in this doc still asks the user to configure
+a webhook URL — but the URL target and auth scheme should follow the
+Hermes docs, not this spec's original "Bearer header" wording.
