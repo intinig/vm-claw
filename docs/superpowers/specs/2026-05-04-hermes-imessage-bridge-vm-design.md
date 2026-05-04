@@ -291,3 +291,13 @@ Captured during the brainstorming session that produced this spec.
 
 - **Webhook auth scheme** — URL secret vs. `Authorization` header. Pin at implementation time per Hermes' BlueBubbles connector docs.
 - **Hermes BlueBubbles connector env var names** — verify against Hermes docs at implementation time rather than commit names from memory.
+
+---
+
+**Update 2026-05-04: superseded by `vmclaw` CLI.** The Phase 1.3 script
+edits, Phase 3 `--add-host` plumbing, Phase 4 wiring, and Phase 5 polish
+in this spec's migration plan are subsumed by the
+[`vmclaw` CLI design spec](./2026-05-04-vmclaw-cli-design.md). The
+runbook section above (`#vm-provisioning-runbook`) is still
+authoritative for the manual Phase 2 work; everything automatable now
+lives behind `vmclaw <subcommand>`.

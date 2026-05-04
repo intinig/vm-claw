@@ -1082,3 +1082,20 @@ EOF
 - `setup.sh` — pre-session edits absorbed in Task 1.2 (the vmnet-collision function survives; the SHA pin and `DISK_SIZE_GB` are removed per spec).
 - `run.sh` — same pattern in Task 1.3.
 - `destroy.sh` — clean modification in Task 1.4.
+
+---
+
+**Update 2026-05-04: superseded by the `vmclaw` CLI plan.** Tasks 0,
+1.1, 1.2, 1.3, 1.4, and 3.1 of this plan landed (commits `bfe4842`
+through `b264bca` plus `a4ae55a`). The remaining Phase 4.1–4.3 and
+Phase 5.1–5.2 tasks are subsumed by
+[`docs/superpowers/plans/2026-05-04-vmclaw-cli.md`](./2026-05-04-vmclaw-cli.md):
+
+- 4.1 (research connector key names) → still deferred; output is a
+  single commit updating constants in `internal/hermes/envfile.go`.
+- 4.2 + 4.3 (`.env` write + e2e test) → folded into
+  `vmclaw bootstrap finalize`.
+- 5.1 (auto-start LaunchAgent) → `vmclaw vm install-agent`.
+- 5.2 (host healthcheck script) → `vmclaw doctor`.
+- 5.3 (recovery paths in CLAUDE.md) → already landed in commit
+  `eecf46e`.
