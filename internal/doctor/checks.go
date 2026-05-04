@@ -144,9 +144,12 @@ func DefaultChecks(cfg Config) []struct {
 			if cfg.BBPassword != "" {
 				url += "?password=" + urlpkg.QueryEscape(cfg.BBPassword)
 			}
+			// nousresearch/hermes-agent ships curl (not wget). -f fails on
+			// HTTP error, -sS is silent-but-show-errors, --max-time bounds
+			// the probe so a hung connection doesn't stall doctor.
 			args := []string{
 				"exec", cfg.HermesGateway,
-				"wget", "-q", "--timeout=5", "-O-", url,
+				"curl", "-fsS", "--max-time", "5", "-o", "/dev/null", url,
 			}
 			if _, err := cfg.Executor.Run(ctx, "docker", args...); err != nil {
 				return Result{Status: StatusFail, Message: "container can't reach " + url + " (--add-host wired? vmnet↔softnet routing OK?)"}
