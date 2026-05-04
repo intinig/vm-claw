@@ -1,40 +1,198 @@
 # vm-claw
 
-Security-isolated macOS VM for running [OpenClaw](https://github.com/pjasicek/OpenClaw) using [Tart](https://tart.run).
+Run [Hermes Agent](https://hermes-agent.nousresearch.com/) on a macOS host with a
+sidecar Tart VM that hosts iMessage under a **separate Apple ID**, so the agent can
+send/receive messages without using the host user's iMessage identity.
 
-## Security Isolation
+Two pieces, picked together:
 
-The VM is configured with strict isolation:
-- **Single read-only shared folder** - Only `~/openclaw-shared` is accessible to the guest
-- **Isolated network** - VM uses its own NAT, not sharing host network/VPN config
-- **No clipboard sharing** - Clipboard is isolated between host and guest
+- **Hermes on host (Docker via Colima)** — `hermes-setup.sh`, following the
+  [Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
+- **iMessage bridge VM (Tart)** — `setup.sh` / `run.sh` / `destroy.sh`, a macOS guest
+  with its own user, its own Apple ID, Messages.app signed in, and
+  [BlueBubbles Server](https://bluebubbles.app/server/) exposing the bridge protocol
+  Hermes calls.
 
-## Requirements
+> **Status:** the project is being migrated from its previous OpenClaw scope. The
+> Tart scripts still use the name `openclaw` internally; renaming is tracked in the
+> design spec.
 
-- macOS host
-- [Tart](https://tart.run) installed (`brew install cirruslabs/cli/tart`)
+See the [design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md)
+for the full design, including why a VM (vs. a second host user) and the migration
+plan.
 
-## Usage
+## Hermes — host side (Docker)
 
-### Setup
+Hermes runs **inside the `nousresearch/hermes-agent` container**, with `~/.hermes` on
+the host bind-mounted to `/opt/data` inside the container. Colima provides the Docker
+daemon.
+
+### Hardening to apply after the setup wizard
+
+The wizard writes a default `~/.hermes/config.yaml`. Edit it (or use `hermes config set`
+inside a one-shot container) so the following hold:
+
+- `terminal.container_persistent: false` — ephemeral tmpfs sandbox, wiped on teardown.
+- `terminal.docker_forward_env: []` — host env never auto-forwarded; credentials reach
+  a sandbox only via skill-declared `required_environment_variables`.
+- `terminal.docker_mount_cwd_to_workspace: false` — explicit, scoped volumes only.
+- `approvals.mode: manual` — dangerous commands prompt. Required for the iMessage
+  skill so sends are user-approved.
+
+(These take effect when `terminal.backend: docker`; harmless under the default `local`
+backend.)
+
+### Requirements
+
+- macOS host (Apple Silicon recommended for Colima `--vm-type vz`).
+- Network access to Docker Hub.
+
+### Usage
 
 ```bash
-./setup.sh
+./hermes-setup.sh
 ```
 
-Downloads macOS Tahoe base image (~25 GB) and creates the `openclaw` VM.
+This installs Homebrew (if missing), `colima`, the `docker` CLI, and `docker-compose`;
+starts the Colima VM; pre-pulls `nousresearch/hermes-agent` and the inner sandbox
+image; creates `~/.hermes`; and creates a docker network for the gateway/dashboard
+pair to share. The script prints the next-step commands tailored to the chosen
+profile.
 
-### Run
+Tunables (env vars):
+
+| Var | Default | Notes |
+|---|---|---|
+| `COLIMA_CPU` | `4` | vCPUs for the Colima VM |
+| `COLIMA_MEMORY_GB` | `8` | RAM for the Colima VM |
+| `COLIMA_DISK_GB` | `80` | Disk for the Colima VM |
+| `COLIMA_VM_TYPE` | `vz` | `vz` on Apple Silicon, fall back to `qemu` on Intel |
+| `COLIMA_PROFILE` | `default` | Colima profile name |
+| `HERMES_IMAGE` | `nousresearch/hermes-agent:latest` | Hermes container image |
+| `HERMES_PROFILE_NAME` | `default` | Hermes profile (see Multi-profile below) |
+| `HERMES_HOME` | `$HOME/.hermes` (or `$HOME/.hermes-<profile>`) | Host data dir → `/opt/data` |
+| `HERMES_GATEWAY_NAME` | `hermes` (or `hermes-<profile>`) | Gateway container name |
+| `HERMES_DASHBOARD_NAME` | `hermes-dashboard` (or `hermes-dashboard-<profile>`) | Dashboard container name |
+| `HERMES_GATEWAY_PORT` | `8642` | Host port for the gateway |
+| `HERMES_DASHBOARD_PORT` | `9119` | Host port for the dashboard |
+| `HERMES_NETWORK` | `hermes-net-<profile>` | Docker network shared by gateway + dashboard |
+
+After the script finishes:
 
 ```bash
-./run.sh
+# 1. Run the Hermes setup wizard (interactive — writes ~/.hermes/.env and the
+#    default ~/.hermes/config.yaml)
+docker run -it --rm \
+  -v ~/.hermes:/opt/data \
+  nousresearch/hermes-agent setup
+
+# 2. Apply the hardening listed above by editing ~/.hermes/config.yaml.
+
+# 3a. Open an interactive chat
+docker run -it --rm \
+  -v ~/.hermes:/opt/data \
+  --memory 4g --cpus 2 --shm-size 1g \
+  nousresearch/hermes-agent
+
+# 3b. Run the messaging gateway as a daemon (port 8642)
+docker run -d --name hermes --restart unless-stopped \
+  --network hermes-net-default \
+  -v ~/.hermes:/opt/data \
+  -p 8642:8642 \
+  --memory 4g --cpus 2 --shm-size 1g \
+  nousresearch/hermes-agent gateway run
+
+# 3c. (Optional) Web dashboard alongside the gateway (port 9119)
+#     --host 0.0.0.0 is required: the dashboard binds to 127.0.0.1 inside the
+#     container by default, so a published port has no listener without it.
+docker run -d --name hermes-dashboard --restart unless-stopped \
+  --network hermes-net-default \
+  -v ~/.hermes:/opt/data \
+  -p 9119:9119 \
+  -e GATEWAY_HEALTH_URL=http://hermes:8642 \
+  nousresearch/hermes-agent dashboard --host 0.0.0.0
+# Open http://localhost:9119
 ```
 
-Starts the VM with isolation enabled. The shared folder is mounted at `/Volumes/My Shared Files/shared` inside the guest (read-only).
+`--shm-size 1g` is needed for Playwright/Chromium browser tools.
 
-### Sharing Files
+Don't expose `8642` or `9119` on an internet-facing host.
 
-Place files in `~/openclaw-shared` on your host. They'll be available read-only inside the VM.
+### Multi-profile pattern
+
+Hermes supports multiple independent agents (separate SOUL, skills, memory, sessions,
+credentials) by giving each its own host data dir and its own container set
+([upstream guidance](https://hermes-agent.nousresearch.com/docs/user-guide/docker#multi-profile-support)).
+Run the setup script once per profile with distinct names and ports:
+
+```bash
+HERMES_PROFILE_NAME=work \
+  HERMES_GATEWAY_PORT=8642 HERMES_DASHBOARD_PORT=9119 \
+  ./hermes-setup.sh
+
+HERMES_PROFILE_NAME=personal \
+  HERMES_GATEWAY_PORT=8643 HERMES_DASHBOARD_PORT=9120 \
+  ./hermes-setup.sh
+```
+
+Each invocation creates `~/.hermes-<profile>/`, a `hermes-net-<profile>` docker
+network, and prints next-step commands with `hermes-<profile>` /
+`hermes-dashboard-<profile>` container names. **Never run two gateways against the
+same data dir** — session/memory stores aren't designed for concurrent writes.
+
+## iMessage bridge VM — Tart
+
+A Tart-based macOS VM with softnet networking. Inside the guest, a dedicated user is
+signed in to a **separate Apple ID** with iMessage enabled, and a small bridge service
+exposes a host-reachable API that Hermes calls.
+
+### Why a VM
+
+iMessage is bound to the Apple ID of the logged-in macOS user. A second user on the
+host works in theory but Messages.app behaves poorly when fast-user-switched to the
+background, and it puts a second identity on the same login session as your real
+keychain and mail. A VM gives the bridge identity its own login, keychain, trusted
+devices, and Messages history. See the
+[design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#why-a-vm-rather-than-a-second-host-user).
+
+### Isolation
+
+- **softnet network** — guest has its own NAT, host VPN/routes don't leak into the
+  guest, bridge service binds only to the softnet-side interface.
+- **No host secrets shared** — host's Apple ID stays on the host; the VM uses an
+  Apple ID created for this purpose.
+
+### Requirements
+
+```bash
+brew install cirruslabs/cli/tart cirruslabs/cli/softnet
+```
+
+Plus a trusted device for the bridge Apple ID's 2FA the first time.
+
+### Usage
+
+```bash
+./setup.sh        # download Tahoe base image (~25 GB), create the VM
+./run.sh          # boot it with softnet + shared folder
+./destroy.sh      # delete it
+```
+
+> Note: as of this writing the scripts still name the VM `openclaw` from the previous
+> project scope. Migration is tracked in the
+> [design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#migration-plan).
+
+After first boot, the VM needs manual setup before Hermes can use it. The full
+runbook is in the
+[design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#vm-provisioning-runbook);
+the short version:
+
+1. Create the dedicated `bridge` macOS user, set it to auto-login.
+2. Sign in to a fresh Apple ID. Complete 2FA (needs a trusted device).
+3. Enable iMessage in Messages.app, verify a test message arrives.
+4. Install BlueBubbles Server, grant Full Disk Access + Automation, set the
+   admin password, configure the webhook to Hermes' gateway.
+5. Add BlueBubbles Server to Login Items so it launches with the GUI session.
 
 ## License
 
