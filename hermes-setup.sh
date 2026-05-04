@@ -44,6 +44,10 @@ HERMES_GATEWAY_PORT="${HERMES_GATEWAY_PORT:-8642}"
 HERMES_DASHBOARD_PORT="${HERMES_DASHBOARD_PORT:-9119}"
 HERMES_NETWORK="${HERMES_NETWORK:-hermes-net-$HERMES_PROFILE_NAME}"
 
+# Tart VM that hosts BlueBubbles Server. The Hermes container resolves it by
+# this name via `docker run --add-host`; the IP is looked up at container start.
+BRIDGE_VM_NAME="${BRIDGE_VM_NAME:-bridge-vm}"
+
 echo "=== Hermes host bootstrap ==="
 echo "  Colima profile   : $COLIMA_PROFILE"
 echo "  Colima resources : $COLIMA_CPU CPU / ${COLIMA_MEMORY_GB} GB RAM / ${COLIMA_DISK_GB} GB disk"
@@ -128,6 +132,33 @@ if ! docker network inspect "$HERMES_NETWORK" >/dev/null 2>&1; then
     docker network create "$HERMES_NETWORK" >/dev/null
 fi
 
+# Resolves the Tart bridge VM's softnet IP, or empty if it can't be looked up
+# (VM not created yet, not running, or tart not on PATH). Used to template
+# --add-host into the printed next-step docker commands.
+bridge_vm_ip() {
+    if ! command -v tart >/dev/null 2>&1; then
+        return 0
+    fi
+    tart ip "$BRIDGE_VM_NAME" 2>/dev/null || true
+}
+
+BRIDGE_IP="$(bridge_vm_ip)"
+if [[ -n "$BRIDGE_IP" ]]; then
+    ADD_HOST_FRAGMENT="--add-host bridge-vm:$BRIDGE_IP"
+    BRIDGE_IP_NOTE=""
+else
+    # VM not up yet: print a literal $(tart ip ...) substitution that the
+    # user can copy-paste — docker will run the lookup at container start.
+    # The leading backslash escapes the $ so the unquoted heredoc preserves
+    # the substitution text instead of expanding it now.
+    ADD_HOST_FRAGMENT="--add-host bridge-vm:\$(tart ip $BRIDGE_VM_NAME)"
+    BRIDGE_IP_NOTE="
+Note: Tart VM '$BRIDGE_VM_NAME' is not running yet, so the commands
+above use \$(tart ip $BRIDGE_VM_NAME) — docker resolves the IP at
+container start. Run Phase 2 of the migration plan first, or just
+re-run this script after the VM is up to bake in a literal IP."
+fi
+
 cat <<EOF
 
 === Done ===
@@ -150,6 +181,7 @@ Next steps (profile: $HERMES_PROFILE_NAME, data: $HERMES_HOME):
 
   3a. Open an interactive chat:
        docker run -it --rm \\
+         $ADD_HOST_FRAGMENT \\
          -v $HERMES_HOME:/opt/data \\
          --memory 4g --cpus 2 --shm-size 1g \\
          $HERMES_IMAGE
@@ -157,6 +189,7 @@ Next steps (profile: $HERMES_PROFILE_NAME, data: $HERMES_HOME):
   3b. Run the messaging gateway as a daemon (port $HERMES_GATEWAY_PORT):
        docker run -d --name $HERMES_GATEWAY_NAME --restart unless-stopped \\
          --network $HERMES_NETWORK \\
+         $ADD_HOST_FRAGMENT \\
          -v $HERMES_HOME:/opt/data \\
          -p $HERMES_GATEWAY_PORT:8642 \\
          --memory 4g --cpus 2 --shm-size 1g \\
@@ -181,4 +214,5 @@ data dir — see https://hermes-agent.nousresearch.com/docs/user-guide/docker#mu
        HERMES_PROFILE_NAME=personal HERMES_GATEWAY_PORT=8643 HERMES_DASHBOARD_PORT=9120 ./hermes-setup.sh
 
 Reference: https://hermes-agent.nousresearch.com/docs/user-guide/docker
+$BRIDGE_IP_NOTE
 EOF
