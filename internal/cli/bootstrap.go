@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/intinig/vm-claw/internal/doctor"
@@ -176,9 +177,13 @@ func runBootstrapFinalize(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintln(out, "[OK]    BlueBubbles responding")
 
-	fmt.Fprintln(out, "==> Wiring Hermes BlueBubbles connector")
-	if err := runHermesWireCmd(ctx, out, ip); err != nil {
-		return err
+	if alreadyWired(ctx, home, ip) {
+		fmt.Fprintln(out, "[SKIP]  Hermes already wired (env keys present, gateway has matching --add-host)")
+	} else {
+		fmt.Fprintln(out, "==> Wiring Hermes BlueBubbles connector")
+		if err := runHermesWireCmd(ctx, out, ip); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintln(out, "==> Running doctor")
@@ -224,6 +229,39 @@ func probeBlueBubblesLiveness(ctx context.Context, ip string, port int) error {
 	default:
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+}
+
+// alreadyWired reports whether the Hermes container is already running
+// with BlueBubbles config matching the current state — that is, the
+// three connector keys are in ~/.hermes/.env AND the running gateway
+// container has --add-host bridge-vm:<current-ip> baked in. When true,
+// `vmclaw bootstrap finalize` skips the password prompt and gateway
+// restart and just runs doctor.
+//
+// Spec invariant: bootstrap finalize is safe to re-run; detects
+// "already wired" and short-circuits to doctor only.
+func alreadyWired(ctx context.Context, home, ip string) bool {
+	envPath := filepath.Join(home, ".hermes", ".env")
+	body, err := os.ReadFile(envPath)
+	if err != nil {
+		return false
+	}
+	text := string(body)
+	for _, key := range []string{
+		hermes.BluebubblesServerURLKey,
+		hermes.BluebubblesPasswordKey,
+		hermes.BluebubblesWebhookHostKey,
+	} {
+		if !strings.Contains(text, key+"=") {
+			return false
+		}
+	}
+	out, err := vm.DefaultExecutor.Run(ctx, "docker", "inspect", "hermes",
+		"--format", "{{range .HostConfig.ExtraHosts}}{{.}}\n{{end}}")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "bridge-vm:"+ip)
 }
 
 // runHermesWireCmd inlines what `vmclaw hermes wire` would do, with
