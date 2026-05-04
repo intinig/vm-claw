@@ -78,6 +78,13 @@ func detectVmnetCollision(ifaces map[string]ifaceInfo) error {
 		if name == vmnetIface || info.IPv4 == "" {
 			continue
 		}
+		// Skip other bridge*/vmenet* interfaces — bash original excluded
+		// these from the collision scan and we match for parity. Without
+		// this guard, Apple's default bridge0 (or a second softnet bridge)
+		// on the same /24 produces a false-positive collision error.
+		if strings.HasPrefix(name, "bridge") || strings.HasPrefix(name, "vmenet") {
+			continue
+		}
 		if strings.HasPrefix(info.IPv4, "127.") {
 			continue
 		}

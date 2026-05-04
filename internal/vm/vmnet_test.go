@@ -91,3 +91,16 @@ func TestDetectVmnetCollision_LoopbackIgnored(t *testing.T) {
 		t.Fatalf("loopback shouldn't cause collision, got %v", err)
 	}
 }
+
+func TestDetectVmnetCollision_OtherBridgeIgnored(t *testing.T) {
+	// Apple's default bridge0 (or a second softnet bridge) sharing the
+	// vmnet /24 should NOT trigger a false-positive collision — we only
+	// scan physical / VPN interfaces, matching the bash original.
+	ifaces := map[string]ifaceInfo{
+		"bridge0":   {IPv4: "192.168.64.42"}, // not a vmnet bridge
+		"bridge100": {IPv4: "192.168.64.1", IsVmnetBridge: true},
+	}
+	if err := detectVmnetCollision(ifaces); err != nil {
+		t.Fatalf("non-vmnet bridge on same /24 shouldn't trigger collision; got %v", err)
+	}
+}
