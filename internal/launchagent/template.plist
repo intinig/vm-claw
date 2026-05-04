@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{.Label}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{.TartPath}}</string>
+    <string>run</string>
+    <string>--net-softnet</string>
+    <string>{{.VMName}}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/{{.Label}}.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/{{.Label}}.err.log</string>
+</dict>
+</plist>
