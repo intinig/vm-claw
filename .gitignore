@@ -11,3 +11,8 @@
 # Environment
 .env
 .env.*
+
+# Go build
+bin/
+vmclaw
+*.test
