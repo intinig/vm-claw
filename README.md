@@ -10,7 +10,7 @@ Two pieces, used together:
   following the [Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
 - **iMessage bridge VM (Tart)** — managed via `vmclaw vm <verb>`, a macOS guest
   with its own user, its own Apple ID, Messages.app signed in, and
-  [BlueBubbles Server](https://bluebubbles.app/server/) exposing the bridge protocol
+  [BlueBubbles Server](https://bluebubbles.app/downloads/server/) exposing the bridge protocol
   Hermes calls.
 
 See the [design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md)
