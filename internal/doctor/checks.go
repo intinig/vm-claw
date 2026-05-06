@@ -80,6 +80,18 @@ func DefaultChecks(cfg Config) []struct {
 			return Result{Status: StatusOK, Message: "found"}
 		}},
 
+		{"vmnet bridge subnet does not collide with host LAN", func(ctx context.Context) Result {
+			if err := vm.VmnetCollisionCheck(); err != nil {
+				// Tahoe regression — bootpd derives bridge100's /24 from
+				// the last entry in /var/db/dhcpd_leases. If the home LAN
+				// has ever leased a 192.168.x.y matching ours, bridge100
+				// inherits it and VM↔host routing breaks. Fix with
+				// `vmclaw doctor --fix` then reboot.
+				return Result{Status: StatusFail, Message: err.Error() + " — run `vmclaw doctor --fix` then reboot"}
+			}
+			return Result{Status: StatusOK, Message: "no overlap"}
+		}},
+
 		{"bridge VM exists", func(ctx context.Context) Result {
 			ok, err := tart.Exists(ctx, cfg.VMName)
 			if err != nil {
