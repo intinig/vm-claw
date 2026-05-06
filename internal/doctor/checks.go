@@ -117,6 +117,28 @@ func DefaultChecks(cfg Config) []struct {
 			return Result{Status: StatusOK, Message: "200 from " + url}
 		}},
 
+		{"colima registered as brew service", func(ctx context.Context) Result {
+			out, err := cfg.Executor.Run(ctx, "brew", "services", "list")
+			if err != nil {
+				return Result{Status: StatusFail, Message: "brew services list failed: " + err.Error()}
+			}
+			for _, line := range strings.Split(string(out), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) < 2 || fields[0] != "colima" {
+					continue
+				}
+				switch fields[1] {
+				case "started", "scheduled":
+					return Result{Status: StatusOK, Message: fields[1] + " (auto-starts at login)"}
+				case "stopped", "none":
+					return Result{Status: StatusFail, Message: "status=" + fields[1] + " — run `brew services start colima` so it survives reboot"}
+				default:
+					return Result{Status: StatusFail, Message: "status=" + fields[1]}
+				}
+			}
+			return Result{Status: StatusFail, Message: "colima not in brew services list"}
+		}},
+
 		{"docker daemon reachable", func(ctx context.Context) Result {
 			if _, err := cfg.Executor.Run(ctx, "docker", "version"); err != nil {
 				return Result{Status: StatusFail, Message: "docker not reachable (start colima?)"}

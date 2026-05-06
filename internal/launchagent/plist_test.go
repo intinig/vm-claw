@@ -21,6 +21,7 @@ func TestRender_BasicSubstitution(t *testing.T) {
 		"<string>bridge-vm</string>",
 		"/tmp/com.vm-claw.bridge-vm.out.log",
 		"/tmp/com.vm-claw.bridge-vm.err.log",
+		"/opt/homebrew/bin", // tart shells out to softnet via PATH lookup
 	}
 	for _, w := range want {
 		if !strings.Contains(string(out), w) {
