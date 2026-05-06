@@ -24,16 +24,17 @@ var templateBody string
 
 // Options templated into the plist.
 type Options struct {
-	Label    string // launchctl Label (also used as the plist filename stem)
-	TartPath string // absolute path to tart binary
-	VMName   string // VM name passed to `tart run --net-softnet`
+	Label       string // launchctl Label (also used as the plist filename stem)
+	TartPath    string // absolute path to tart binary
+	VMName      string // VM name passed to `tart run --net-bridged=<iface>`
+	BridgeIface string // host interface for --net-bridged (e.g. "en0")
 }
 
 // render templates the plist body. Returns an error if any required
 // field is empty.
 func render(opts Options) ([]byte, error) {
-	if opts.Label == "" || opts.TartPath == "" || opts.VMName == "" {
-		return nil, fmt.Errorf("plist render: Label, TartPath, and VMName all required (got %#v)", opts)
+	if opts.Label == "" || opts.TartPath == "" || opts.VMName == "" || opts.BridgeIface == "" {
+		return nil, fmt.Errorf("plist render: Label, TartPath, VMName, and BridgeIface all required (got %#v)", opts)
 	}
 	t, err := template.New("plist").Parse(templateBody)
 	if err != nil {

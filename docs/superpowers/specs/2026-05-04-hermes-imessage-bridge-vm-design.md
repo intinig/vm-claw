@@ -1,8 +1,19 @@
 # Hermes + iMessage bridge VM — design spec
 
 **Date:** 2026-05-04
-**Status:** Approved (per brainstorming session); pending implementation.
+**Status:** Approved (per brainstorming session); implemented except for the
+softnet networking layer.
 **Replaces:** the prior `SPEC.md` at the repo root and the OpenClaw scope it inherited from.
+
+> **Networking deviation in effect (2026-05).** Everything below describes the
+> intended **softnet** topology. macOS Tahoe broke `Shared_Net_Address` in the
+> vmnet plist, so vm-claw is temporarily running the VM with `--net-bridged`
+> onto the host's LAN interface. The VM lives on your home LAN directly, the
+> host↔guest path goes via plain LAN routing, and there's no socat or
+> vmnet↔softnet forwarding to worry about. Read this spec for the long-term
+> design; check `README.md` ("Networking: bridged-mode workaround for the
+> Tahoe vmnet regression") and `CLAUDE.md` for the current behavior and the
+> upstream issues to watch for the revert trigger.
 
 ## Goal
 

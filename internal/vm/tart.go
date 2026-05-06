@@ -32,11 +32,20 @@ func (t *Tart) Exists(ctx context.Context, name string) (bool, error) {
 	return parseTartListContains(string(out), name), nil
 }
 
-// IP returns the bridge VM's softnet IP, or "" if the VM is not running
+// IP returns the bridge VM's IP, or "" if the VM is not running
 // or doesn't have an IP yet. Validates that the returned value is IPv4 —
 // some tart versions print error strings to stdout in error states.
+//
+// Uses --resolver=agent because we run with --net-bridged in MACNAT
+// mode: the default "dhcp" resolver reads /var/db/dhcpd_leases (which
+// only vmnet/bootpd writes — never the LAN router) and the "arp"
+// resolver can't see the VM because Tart's bridged-mode bridge
+// (bridge101) MAC-NATs the VM and the VM's MAC never enters the host's
+// ARP table. The "agent" resolver talks to tart-guest-agent over vsock
+// and works in all networking modes; the cirruslabs/macos-tahoe-base
+// image ships the agent. When reverting to softnet, "dhcp" works.
 func (t *Tart) IP(ctx context.Context, name string) (string, error) {
-	out, err := t.exec.Run(ctx, "tart", "ip", name)
+	out, err := t.exec.Run(ctx, "tart", "ip", "--resolver", "agent", name)
 	if err != nil {
 		// `tart ip` exits non-zero when the VM is stopped; return empty, no error.
 		return "", nil

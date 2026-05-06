@@ -47,13 +47,11 @@ func runBootstrap(cmd *cobra.Command, _ []string) error {
 	if _, err := exec.LookPath("tart"); err != nil {
 		return fmt.Errorf("tart not on PATH (brew install cirruslabs/cli/tart)")
 	}
-	if _, err := exec.LookPath("softnet"); err != nil {
-		return fmt.Errorf("softnet not on PATH (brew install cirruslabs/cli/softnet)")
+	bridgeIface, err := resolveBridgeInterface()
+	if err != nil {
+		return fmt.Errorf("detect bridge interface: %w", err)
 	}
-	if err := vm.VmnetCollisionCheck(); err != nil {
-		return err
-	}
-	fmt.Fprintln(out, "[OK]    prerequisites")
+	fmt.Fprintf(out, "[OK]    prerequisites (bridged on %s)\n", bridgeIface)
 
 	fmt.Fprintln(out, "==> Creating bridge VM")
 	tart := vm.NewTart()
@@ -111,13 +109,14 @@ func runBootstrap(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if err := launchagent.Install(ctx, vm.DefaultExecutor, home, launchagent.Options{
-		Label:    launchagent.DefaultLabel,
-		TartPath: tartPath,
-		VMName:   defaultVMName,
+		Label:       launchagent.DefaultLabel,
+		TartPath:    tartPath,
+		VMName:      defaultVMName,
+		BridgeIface: bridgeIface,
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "[OK]    LaunchAgent loaded")
+	fmt.Fprintf(out, "[OK]    LaunchAgent loaded (bridged on %s)\n", bridgeIface)
 
 	printPhase2Runbook(out)
 	return nil
@@ -136,10 +135,13 @@ func printPhase2Runbook(out io.Writer) {
 	fmt.Fprintln(out, "   docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#vm-provisioning-runbook")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "3. In BlueBubbles Server → Settings → API → Webhooks, register a webhook")
-	fmt.Fprintln(out, "   pointing at the host's softnet-gateway IP (visible from inside the VM via")
-	fmt.Fprintln(out, "   `route -n get default | awk '/gateway/{print $2}'`):")
+	fmt.Fprintln(out, "   pointing at the host's LAN IP. The VM is bridged onto your LAN so it can")
+	fmt.Fprintln(out, "   reach the host directly. From inside the VM, find the host's LAN IP:")
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "       http://<softnet-gw-ip>:8645/bluebubbles-webhook")
+	fmt.Fprintln(out, "       route -n get default | awk '/gateway/{print $2}'  # your LAN router")
+	fmt.Fprintln(out, "       # the host has a sibling IP on the same /24 — use that for the webhook:")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "       http://<host-lan-ip>:8645/bluebubbles-webhook")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "   No auth header — Hermes authenticates by sender identity. After the first")
 	fmt.Fprintln(out, "   inbound message, Hermes sends a pairing code via iMessage; approve it on")

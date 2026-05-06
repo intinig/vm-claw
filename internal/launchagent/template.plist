@@ -9,7 +9,7 @@
   <array>
     <string>{{.TartPath}}</string>
     <string>run</string>
-    <string>--net-softnet</string>
+    <string>--net-bridged={{.BridgeIface}}</string>
     <string>{{.VMName}}</string>
   </array>
   <key>EnvironmentVariables</key>

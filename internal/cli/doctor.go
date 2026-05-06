@@ -1,22 +1,16 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/intinig/vm-claw/internal/doctor"
 	"github.com/intinig/vm-claw/internal/hermes"
-	"github.com/intinig/vm-claw/internal/launchagent"
 	"github.com/intinig/vm-claw/internal/vm"
 	"github.com/spf13/cobra"
 )
-
-var doctorFix bool
 
 func init() {
 	doctorCmd := &cobra.Command{
@@ -28,13 +22,6 @@ func init() {
 			home, err := os.UserHomeDir()
 			if err != nil {
 				return err
-			}
-
-			// --fix runs known remediations and exits before the regular
-			// healthcheck — the remediations require a reboot, so the
-			// post-fix doctor result wouldn't be meaningful in this run.
-			if doctorFix {
-				return runDoctorFix(ctx, out, home)
 			}
 
 			// Read BlueBubbles password from ~/.hermes/.env if present so
@@ -57,55 +44,7 @@ func init() {
 		},
 	}
 	doctorCmd.PersistentFlags().StringVar(&vmName, "name", envOr("BRIDGE_VM_NAME", defaultVMName), "VM name")
-	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "Apply known remediations (currently: vmnet bridge subnet collision; requires sudo + reboot)")
 	rootCmd.AddCommand(doctorCmd)
-}
-
-// runDoctorFix applies the Tahoe vmnet remediation when the bridge100
-// subnet collides with the host LAN. No-op (with a friendly message)
-// when no collision is detected. Requires sudo; does NOT reboot —
-// prints the post-fix instructions instead.
-func runDoctorFix(ctx context.Context, out io.Writer, home string) error {
-	if err := vm.VmnetCollisionCheck(); err == nil {
-		fmt.Fprintln(out, "[SKIP]  no vmnet collision to fix")
-		return nil
-	} else {
-		fmt.Fprintf(out, "==> Detected: %s\n", err)
-	}
-
-	fmt.Fprintln(out, "==> Applying Tahoe vmnet remediation (192.168.66.1/24)")
-	plistPath := launchagent.PlistPath(home, launchagent.DefaultLabel)
-	if _, err := os.Stat(plistPath); err == nil {
-		fmt.Fprintf(out, "[DOING] launchctl unload %s\n", plistPath)
-		_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
-	}
-
-	fmt.Fprintln(out, "[DOING] tart stop --all (best-effort)")
-	_ = exec.CommandContext(ctx, "tart", "stop", "--all").Run()
-
-	steps := [][]string{
-		{"sudo", "rm", "-f", "/var/db/dhcpd_leases"},
-		{"sudo", "defaults", "write",
-			"/Library/Preferences/SystemConfiguration/com.apple.vmnet",
-			"Shared_Net_Address", "-string", "192.168.66.1"},
-		{"sudo", "defaults", "write",
-			"/Library/Preferences/SystemConfiguration/com.apple.vmnet",
-			"Shared_Net_Mask", "-string", "255.255.255.0"},
-	}
-	for _, s := range steps {
-		fmt.Fprintf(out, "[DOING] %s\n", strings.Join(s, " "))
-		c := exec.CommandContext(ctx, s[0], s[1:]...)
-		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-		if err := c.Run(); err != nil {
-			return fmt.Errorf("%s: %w", strings.Join(s, " "), err)
-		}
-	}
-
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "[OK]    vmnet plist updated and stale leases cleared.")
-	fmt.Fprintln(out, "==> REBOOT REQUIRED. After reboot, the LaunchAgent will respawn the VM,")
-	fmt.Fprintln(out, "    bridge100 will come up on 192.168.66.0/24, and `vmclaw doctor` should go green.")
-	return nil
 }
 
 // readBBPasswordFromEnvFile is a permissive helper; returns empty string

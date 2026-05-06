@@ -36,9 +36,6 @@ func init() {
 		Short: "Clone the Tahoe base image into the bridge VM",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := vm.VmnetCollisionCheck(); err != nil {
-				return err
-			}
 			tart := vm.NewTart()
 			exists, err := tart.Exists(ctx, vmName)
 			if err != nil {
@@ -60,13 +57,15 @@ func init() {
 
 	vmRunCmd := &cobra.Command{
 		Use:   "run",
-		Short: "Boot the bridge VM with --net-softnet (foreground)",
+		Short: "Boot the bridge VM with --net-bridged (foreground)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := vm.VmnetCollisionCheck(); err != nil {
+			iface, err := resolveBridgeInterface()
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[DOING] tart run --net-softnet %s\n", vmName)
-			tartCmd := exec.CommandContext(cmd.Context(), "tart", "run", "--net-softnet", vmName)
+			flag := "--net-bridged=" + iface
+			fmt.Fprintf(cmd.OutOrStdout(), "[DOING] tart run %s %s\n", flag, vmName)
+			tartCmd := exec.CommandContext(cmd.Context(), "tart", "run", flag, vmName)
 			tartCmd.Stdin = os.Stdin
 			tartCmd.Stdout = os.Stdout
 			tartCmd.Stderr = os.Stderr
@@ -127,14 +126,19 @@ func init() {
 				label = launchagent.DefaultLabel
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "[DOING] writing %s\n", launchagent.PlistPath(home, label))
+			iface, err := resolveBridgeInterface()
+			if err != nil {
+				return err
+			}
 			if err := launchagent.Install(ctx, vm.DefaultExecutor, home, launchagent.Options{
-				Label:    label,
-				TartPath: tartPath,
-				VMName:   vmName,
+				Label:       label,
+				TartPath:    tartPath,
+				VMName:      vmName,
+				BridgeIface: iface,
 			}); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[OK]    LaunchAgent %q loaded\n", label)
+			fmt.Fprintf(cmd.OutOrStdout(), "[OK]    LaunchAgent %q loaded (bridged on %s)\n", label, iface)
 			return nil
 		},
 	}
@@ -170,4 +174,15 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// resolveBridgeInterface honors BRIDGE_HOST_IFACE if set, otherwise
+// auto-detects via the IPv4 default route. Tart's --net-bridged needs
+// the interface name (e.g. "en0"); see CLAUDE.md for why we're on
+// bridged mode instead of softnet.
+func resolveBridgeInterface() (string, error) {
+	if v := os.Getenv("BRIDGE_HOST_IFACE"); v != "" {
+		return v, nil
+	}
+	return vm.DetectBridgeInterface()
 }

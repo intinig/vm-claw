@@ -140,9 +140,37 @@ same data dir** — session/memory stores aren't designed for concurrent writes.
 
 ## iMessage bridge VM — Tart
 
-A Tart-based macOS VM with softnet networking. Inside the guest, a dedicated user is
-signed in to a **separate Apple ID** with iMessage enabled, and a small bridge service
-exposes a host-reachable API that Hermes calls.
+A Tart-based macOS VM bridged onto the host's LAN interface. Inside the guest, a
+dedicated user is signed in to a **separate Apple ID** with iMessage enabled, and a
+small bridge service exposes a host-reachable API that Hermes calls.
+
+> ### Networking: bridged-mode workaround for the Tahoe vmnet regression
+>
+> vm-claw originally used Tart's `--net-softnet` for an isolated NAT'd guest
+> network, configurable via `Shared_Net_Address` in
+> `/Library/Preferences/SystemConfiguration/com.apple.vmnet.plist`. That key is
+> **silently ignored on macOS 26 (Tahoe)** — `bridge100` ends up on
+> `192.168.2.0/24` regardless, which collides with many home routers. We've
+> temporarily switched to `--net-bridged=<iface>` (auto-detected via the IPv4
+> default route, override with `BRIDGE_HOST_IFACE`). The VM lives on your home
+> LAN directly, so isolation is weaker — don't run this on an untrusted shared
+> network. We'll revert to softnet once the regression is fixed.
+>
+> Track upstream:
+> - [canonical/multipass#4383](https://github.com/canonical/multipass/issues/4383)
+>   — original Tahoe regression report; same root cause.
+> - [canonical/multipass#4581](https://github.com/canonical/multipass/issues/4581)
+>   — duplicate; confirms `Shared_Net_Address` no longer honored.
+> - [apple/container#109](https://github.com/apple/container/issues/109)
+>   — same bug hits Apple's own `container` tool.
+> - [cirruslabs/tart discussion #1092](https://github.com/cirruslabs/tart/discussions/1092)
+>   — Tart maintainer notes `Shared_Net_Address` works on Sequoia 15.5; the
+>   break is Tahoe-specific. Watch for a Tart-side workaround.
+> - [Tart FAQ — changing the default NAT subnet](https://tart.run/faq/) — what
+>   the documented config knob looks like (the one Tahoe ignores).
+> - [canonical/multipass PR #4686](https://github.com/canonical/multipass/pull/4686)
+>   — multipass's QEMU-layer workaround. Doesn't apply directly to Tart
+>   (Virtualization.framework, not QEMU), but shows the shape of a fix.
 
 ### Why a VM
 
@@ -155,18 +183,23 @@ devices, and Messages history. See the
 
 ### Isolation
 
-- **softnet network** — guest has its own NAT, host VPN/routes don't leak into the
-  guest, bridge service binds only to the softnet-side interface.
+- **Bridged onto the host LAN (current — Tahoe stopgap)** — guest gets a DHCP
+  lease from the LAN router. No NAT between host and guest; both reach each
+  other over the LAN. BlueBubbles is reachable by every device on the LAN, so
+  the BlueBubbles password is the only access control.
 - **No host secrets shared** — host's Apple ID stays on the host; the VM uses an
   Apple ID created for this purpose.
 
 ### Requirements
 
 ```bash
-brew install cirruslabs/cli/tart cirruslabs/cli/softnet
+brew install cirruslabs/cli/tart
 ```
 
 Plus a trusted device for the bridge Apple ID's 2FA the first time.
+
+(`cirruslabs/cli/softnet` is no longer required while we're on the bridged-mode
+workaround. Reinstall it when reverting to `--net-softnet`.)
 
 ### Usage
 

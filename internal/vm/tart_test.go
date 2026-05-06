@@ -75,7 +75,7 @@ func TestTart_Exists(t *testing.T) {
 func TestTart_IP_ValidIPv4(t *testing.T) {
 	exe := &fakeExecutor{
 		responses: map[string]fakeResp{
-			"tart ip bridge-vm": {out: []byte("192.168.64.42\n"), err: nil},
+			"tart ip --resolver agent bridge-vm": {out: []byte("192.168.64.42\n"), err: nil},
 		},
 	}
 	got, err := NewTartWithExecutor(exe).IP(context.Background(), "bridge-vm")
@@ -90,7 +90,7 @@ func TestTart_IP_ValidIPv4(t *testing.T) {
 func TestTart_IP_NonIPv4Output(t *testing.T) {
 	exe := &fakeExecutor{
 		responses: map[string]fakeResp{
-			"tart ip bridge-vm": {out: []byte("Error: VM not started\n"), err: nil},
+			"tart ip --resolver agent bridge-vm": {out: []byte("Error: VM not started\n"), err: nil},
 		},
 	}
 	_, err := NewTartWithExecutor(exe).IP(context.Background(), "bridge-vm")
@@ -102,7 +102,7 @@ func TestTart_IP_NonIPv4Output(t *testing.T) {
 func TestTart_IP_ErrorReturnsEmpty(t *testing.T) {
 	exe := &fakeExecutor{
 		responses: map[string]fakeResp{
-			"tart ip bridge-vm": {out: nil, err: errors.New("exit 1")},
+			"tart ip --resolver agent bridge-vm": {out: nil, err: errors.New("exit 1")},
 		},
 	}
 	got, err := NewTartWithExecutor(exe).IP(context.Background(), "bridge-vm")
