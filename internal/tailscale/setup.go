@@ -20,30 +20,51 @@ type Status struct {
 	TailscaleIPs []string
 }
 
-// Install ensures the tailscale-app cask is present. Idempotent.
-// The first launch (to approve the network extension) is a manual GUI step
-// documented in docs/runbook-openclaw-install.md.
+// Install ensures the open-source `tailscale` formula is present and the
+// tailscaled daemon is registered as a root LaunchDaemon via `brew services`.
+// Idempotent.
+//
+// Why the formula, not the cask:
+//   - The cask (`tailscale-app`) installs a sandboxed GUI build whose
+//     userspace network extension collides with sshd's privsep socket
+//     handoff on macOS — incoming TCP to sshd over the tailnet0 interface
+//     fails with `getpeername: Invalid argument` and `Connection reset by
+//     peer`, breaking ops SSH over the tailnet entirely.
+//   - The formula (`tailscale`) installs the open-source `tailscale` +
+//     `tailscaled` binaries; running tailscaled as a root LaunchDaemon
+//     sidesteps the sandbox and restores SSH-over-tailnet.
+//   - The formula also avoids the one-time "Allow system extension" GUI
+//     click that the cask requires on macOS Sequoia.
 func Install(ctx context.Context, exec vm.Executor) error {
-	return vm.EnsureBrewCask(ctx, exec, "tailscale-app")
+	if err := vm.EnsureBrewPackages(ctx, exec, "tailscale"); err != nil {
+		return err
+	}
+	// Register tailscaled as a root LaunchDaemon. The brew formula's
+	// Caveats describe this exact incantation. Idempotent: brew services
+	// start is a no-op if the service is already running.
+	if _, err := exec.Run(ctx, "sudo", "brew", "services", "start", "tailscale"); err != nil {
+		return fmt.Errorf("brew services start tailscale: %w", err)
+	}
+	return nil
 }
 
-// Up runs `tailscale up` with the given auth key and tag.
+// Up runs `sudo tailscale up` with the given auth key and tag.
+// sudo is required because tailscaled runs as root and `tailscale up`
+// must talk to it through a root-owned local API socket.
 // Auth key value is redacted from any wrapped error.
 func Up(ctx context.Context, exec vm.Executor, authKey, advertiseTag string) error {
 	if authKey == "" {
 		return ErrAuthKeyRequired
 	}
-	// Note: --ssh is NOT supported by the sandboxed Tailscale-app cask build
-	// on macOS (returns 500 Internal Server Error). Use macOS Remote Login
-	// + regular ssh over the tailnet IP for ops access instead.
 	args := []string{
+		"tailscale",
 		"up",
 		"--auth-key=" + authKey,
 	}
 	if advertiseTag != "" {
 		args = append(args, "--advertise-tags="+advertiseTag)
 	}
-	if _, err := exec.Run(ctx, "tailscale", args...); err != nil {
+	if _, err := exec.Run(ctx, "sudo", args...); err != nil {
 		return redactAuthKey(fmt.Errorf("tailscale up: %w", err), authKey)
 	}
 	return nil

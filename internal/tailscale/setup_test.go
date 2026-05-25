@@ -68,6 +68,9 @@ func TestUp_PassesAuthKeyAndTag(t *testing.T) {
 		t.Fatalf("unexpected: %v", err)
 	}
 	got := strings.Join(fx.calls, " | ")
+	if !strings.HasPrefix(fx.calls[0], "sudo tailscale up") {
+		t.Fatalf("expected `sudo tailscale up ...` (sudo required because tailscaled runs as root), got: %s", fx.calls[0])
+	}
 	if !strings.Contains(got, "--auth-key=tskey-auth-XYZ") {
 		t.Fatalf("expected auth-key in call, got: %s", got)
 	}
@@ -75,7 +78,7 @@ func TestUp_PassesAuthKeyAndTag(t *testing.T) {
 		t.Fatalf("expected advertise-tags in call, got: %s", got)
 	}
 	if strings.Contains(got, "--ssh") {
-		t.Fatalf("--ssh must not be passed (sandboxed Tailscale GUI build rejects it), got: %s", got)
+		t.Fatalf("--ssh must not be passed (the open-source tailscaled daemon does not enable the SSH server by default for our setup), got: %s", got)
 	}
 }
 
@@ -84,7 +87,7 @@ func TestUp_RedactsAuthKeyOnError(t *testing.T) {
 	fx := &fakeExec{
 		outputs: map[string]string{},
 		errs: map[string]error{
-			"tailscale up --auth-key=" + authKey + " --advertise-tags=tag:vm-claw": errors.New("backend " + authKey + " failed"),
+			"sudo tailscale up --auth-key=" + authKey + " --advertise-tags=tag:vm-claw": errors.New("backend " + authKey + " failed"),
 		},
 	}
 	err := Up(context.Background(), fx, authKey, "tag:vm-claw")
@@ -93,5 +96,32 @@ func TestUp_RedactsAuthKeyOnError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), authKey) {
 		t.Fatalf("auth key leaked in error: %v", err)
+	}
+}
+
+func TestInstall_UsesFormulaAndStartsService(t *testing.T) {
+	fx := &fakeExec{
+		outputs: map[string]string{
+			"brew list --formula tailscale":            "",
+			"brew install tailscale":                   "",
+			"sudo brew services start tailscale":       "started",
+		},
+		errs: map[string]error{
+			// Simulate "not installed" so EnsureBrewPackages installs.
+			"brew list --formula tailscale": errors.New("not installed"),
+		},
+	}
+	if err := Install(context.Background(), fx); err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	got := strings.Join(fx.calls, " | ")
+	if !strings.Contains(got, "brew install tailscale") {
+		t.Fatalf("expected `brew install tailscale` (formula, not cask), got: %s", got)
+	}
+	if strings.Contains(got, "--cask") {
+		t.Fatalf("must NOT install the cask: %s", got)
+	}
+	if !strings.Contains(got, "sudo brew services start tailscale") {
+		t.Fatalf("expected `sudo brew services start tailscale` to register the root LaunchDaemon, got: %s", got)
 	}
 }
