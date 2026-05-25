@@ -34,7 +34,9 @@ func init() {
 }
 
 func runBootstrap(cmd *cobra.Command, _ []string) error {
-	ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Minute)
+	// First-time clone pulls the ~12-15GB Sequoia base image from ghcr.io; on a slow
+	// link this can take 30-60 min. 90 min gives headroom without false-cancelling.
+	ctx, cancel := context.WithTimeout(cmd.Context(), 90*time.Minute)
 	defer cancel()
 	out := cmd.OutOrStdout()
 	t := vm.NewTart()
@@ -58,7 +60,7 @@ func runBootstrap(cmd *cobra.Command, _ []string) error {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve home dir: %w", err)
 	}
 	tartPath, err := exec.LookPath("tart")
 	if err != nil {

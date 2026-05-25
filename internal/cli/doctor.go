@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// defaultBBPort is a leftover BlueBubbles port — used by a check that
+// Batch 9 (Task A7) will remove. Do not propagate.
 const defaultBBPort = 1234
 
 func init() {
