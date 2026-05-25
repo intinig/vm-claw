@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultVMName    = "bridge-vm"
+	defaultVMName    = "vm-claw"
 	defaultBaseImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
 )
 
@@ -27,13 +27,13 @@ var (
 func init() {
 	vmCmd := &cobra.Command{
 		Use:   "vm",
-		Short: "Manage the bridge Tart VM",
+		Short: "Manage the vm-claw Tart VM",
 	}
 	vmCmd.PersistentFlags().StringVar(&vmName, "name", envOr("BRIDGE_VM_NAME", defaultVMName), "VM name")
 
 	vmCreateCmd := &cobra.Command{
 		Use:   "create",
-		Short: "Clone the Tahoe base image into the bridge VM",
+		Short: "Clone the Sequoia base image into the vm-claw VM",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			tart := vm.NewTart()
@@ -57,7 +57,7 @@ func init() {
 
 	vmRunCmd := &cobra.Command{
 		Use:   "run",
-		Short: "Boot the bridge VM with --net-bridged (foreground)",
+		Short: "Boot the vm-claw VM with --net-bridged (foreground)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			iface, err := resolveBridgeInterface()
 			if err != nil {
@@ -75,7 +75,7 @@ func init() {
 
 	vmDestroyCmd := &cobra.Command{
 		Use:   "destroy",
-		Short: "Delete the bridge VM",
+		Short: "Delete the vm-claw VM",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			tart := vm.NewTart()
@@ -110,7 +110,7 @@ func init() {
 
 	vmInstallAgentCmd := &cobra.Command{
 		Use:   "install-agent",
-		Short: "Install the LaunchAgent that auto-starts the bridge VM at user login",
+		Short: "Install the LaunchAgent that auto-starts the vm-claw VM at user login",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			tartPath, err := exec.LookPath("tart")
@@ -146,7 +146,7 @@ func init() {
 
 	vmUninstallAgentCmd := &cobra.Command{
 		Use:   "uninstall-agent",
-		Short: "Unload and remove the bridge VM's LaunchAgent",
+		Short: "Unload and remove the vm-claw VM's LaunchAgent",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			home, err := os.UserHomeDir()
 			if err != nil {
