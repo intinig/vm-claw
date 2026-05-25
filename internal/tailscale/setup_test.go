@@ -74,8 +74,8 @@ func TestUp_PassesAuthKeyAndTag(t *testing.T) {
 	if !strings.Contains(got, "--advertise-tags=tag:vm-claw") {
 		t.Fatalf("expected advertise-tags in call, got: %s", got)
 	}
-	if !strings.Contains(got, "--ssh") {
-		t.Fatalf("expected --ssh flag, got: %s", got)
+	if strings.Contains(got, "--ssh") {
+		t.Fatalf("--ssh must not be passed (sandboxed Tailscale GUI build rejects it), got: %s", got)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestUp_RedactsAuthKeyOnError(t *testing.T) {
 	fx := &fakeExec{
 		outputs: map[string]string{},
 		errs: map[string]error{
-			"tailscale up --auth-key=" + authKey + " --ssh --advertise-tags=tag:vm-claw": errors.New("backend " + authKey + " failed"),
+			"tailscale up --auth-key=" + authKey + " --advertise-tags=tag:vm-claw": errors.New("backend " + authKey + " failed"),
 		},
 	}
 	err := Up(context.Background(), fx, authKey, "tag:vm-claw")

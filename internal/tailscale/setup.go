@@ -33,10 +33,12 @@ func Up(ctx context.Context, exec vm.Executor, authKey, advertiseTag string) err
 	if authKey == "" {
 		return ErrAuthKeyRequired
 	}
+	// Note: --ssh is NOT supported by the sandboxed Tailscale-app cask build
+	// on macOS (returns 500 Internal Server Error). Use macOS Remote Login
+	// + regular ssh over the tailnet IP for ops access instead.
 	args := []string{
 		"up",
 		"--auth-key=" + authKey,
-		"--ssh", // enable Tailscale SSH for ops access
 	}
 	if advertiseTag != "" {
 		args = append(args, "--advertise-tags="+advertiseTag)
