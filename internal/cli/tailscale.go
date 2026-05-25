@@ -49,8 +49,8 @@ func newTailscaleBootstrapCmd() *cobra.Command {
 			}
 			fmt.Fprintf(out, "Tailscale state=%s host=%s ips=%v\n", s.BackendState, s.Hostname, s.TailscaleIPs)
 
-			fmt.Fprintln(out, "Enabling firewall block-all-incoming...")
-			if err := vm.EnableBlockAllIncoming(ctx, inVM); err != nil {
+			fmt.Fprintln(out, "Enabling firewall (signed apps allowed inbound)...")
+			if err := vm.EnableFirewall(ctx, inVM); err != nil {
 				return fmt.Errorf("enable firewall: %w", err)
 			}
 

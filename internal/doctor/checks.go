@@ -234,15 +234,18 @@ func DefaultChecks(cfg Config) []struct {
 			return Result{Status: StatusOK, Message: "Running, host=" + s.Hostname}
 		}},
 
-		{"vm-firewall-block-all-incoming", func(ctx context.Context) Result {
-			ok, err := vm.IsBlockAllIncoming(ctx, inVM)
+		{"vm-firewall-enabled", func(ctx context.Context) Result {
+			ok, err := vm.IsFirewallEnabled(ctx, inVM)
 			if err != nil {
 				return Result{Status: StatusFail, Message: err.Error()}
 			}
 			if !ok {
-				return Result{Status: StatusFail, Message: "block-all-incoming NOT set — run `vmclaw vm tailscale-bootstrap` to enable"}
+				return Result{Status: StatusFail, Message: "macOS Application Firewall is off — run `vmclaw vm tailscale-bootstrap` to enable"}
 			}
-			return Result{Status: StatusOK, Message: "enabled"}
+			// Note: spec aspirationally calls for per-interface block-inbound
+			// on en0 (the bridged LAN side); that's a pf job and a follow-up.
+			// socketfilterfw block-all-incoming would break ops SSH.
+			return Result{Status: StatusOK, Message: "enabled (signed apps allowed; per-interface block is a pf follow-up)"}
 		}},
 
 		{"vm-openclaw-gateway-running", func(ctx context.Context) Result {
