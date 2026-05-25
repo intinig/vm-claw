@@ -1,0 +1,61 @@
+# Sample OpenClaw config — copy to ~/.openclaw/config.yaml inside the vm-claw VM.
+# This file encodes the security contract documented in
+# docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md (Security Surface Mapping).
+
+# --- Auth + permissions (do not weaken) ---
+auth:
+  required: true            # WebChat / API auth token required, even on the tailnet.
+
+permissions:
+  askConfirmation: true     # All sensitive actions require user confirmation.
+
+terminal:
+  persistent: false         # Ephemeral sandbox — no state leaks across invocations.
+  # No workspaceMount: do not bind-mount host paths into the agent's terminal.
+
+# --- Plugin allowlist (mitigates ClawHavoc-class supply chain) ---
+plugins:
+  allowList:
+    - openclaw/policy        # Bundled policy plugin (channel conformance checks).
+    - openclaw/imessage      # iMessage channel — required.
+    # Add specific plugins by exact name. No wildcards. No auto-install.
+  autoInstall: false
+
+# --- iMessage channel (imsg-backed) ---
+channels:
+  imessage:
+    enabled: true
+    cliPath: imsg            # brew-installed at /opt/homebrew/bin/imsg
+    dmPolicy: allowlist
+    allowFrom:
+      - "+1XXXXXXXXXX"       # Your own iMessage handle (replace placeholder).
+    groupPolicy: allowlist
+    groupAllowFrom: []       # Add chat_guid or chat_identifier entries to allow group inputs.
+    groups:
+      "*":
+        requireMention: true # Bot only replies when @-mentioned (Apple inline mention or pattern).
+
+# --- Agent group-chat mention patterns ---
+agents:
+  list:
+    - name: default
+      groupChat:
+        mentionPatterns:
+          - "^@?openclaw\\b"
+          - "^@?claw\\b"
+
+# --- Provider keys (chmod 600 the whole config.yaml) ---
+providers:
+  anthropic:
+    apiKey: REPLACE_FROM_BACKUP_ENV
+  openai:
+    apiKey: REPLACE_FROM_BACKUP_ENV
+
+# --- WebChat binding (Tailscale-only inbound) ---
+webchat:
+  host: 127.0.0.1            # Bind to loopback; Tailscale Serve forwards from tailnet.
+  port: 18789
+
+# --- Gateway logging ---
+gateway:
+  logLevel: info
