@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultVMName    = "vm-claw"
-	defaultBaseImage = "ghcr.io/cirruslabs/macos-tahoe-base:latest"
+	defaultBaseImage = bootstrapBaseImage
 )
 
 var (
