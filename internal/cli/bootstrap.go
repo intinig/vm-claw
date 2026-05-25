@@ -15,8 +15,9 @@ import (
 )
 
 // bootstrapBaseImage is the Sequoia base image used by bootstrap.
-// Batch 3 will pin this to a digest.
-const bootstrapBaseImage = "ghcr.io/cirruslabs/macos-sequoia-base:latest"
+// Pinned Sequoia base image. Resolved 2026-05-25 from ghcr.io (Option A, tag: latest).
+// Re-pin annually or whenever Cirrus publishes a Sequoia point-release we want.
+const bootstrapBaseImage = "ghcr.io/cirruslabs/macos-sequoia-base@sha256:cae088989568978bcc9e5caf8eeabd02e68bf3317e765aafd5491a9db8924663"
 
 func init() {
 	bootstrapCmd := &cobra.Command{
