@@ -4,15 +4,13 @@ import (
 	"fmt"
 
 	"github.com/intinig/vm-claw/internal/doctor"
-	"github.com/intinig/vm-claw/internal/vm"
 	"github.com/spf13/cobra"
 )
 
-// defaultBBPort is a leftover BlueBubbles port — used by a check that
-// Batch 9 (Task A7) will remove. Do not propagate.
-const defaultBBPort = 1234
-
 func init() {
+	var smoke bool
+	var tailnetHost string
+
 	doctorCmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run end-to-end healthcheck across the vm-claw stack",
@@ -20,12 +18,13 @@ func init() {
 			out := cmd.OutOrStdout()
 			ctx := cmd.Context()
 
+			cfg := doctor.DefaultConfig()
+			cfg.VMName = vmName
+			cfg.SmokeEnabled = smoke
+			cfg.TailnetHostname = tailnetHost
+
 			fmt.Fprintln(out, "vmclaw doctor")
-			failed := doctor.Run(ctx, out, doctor.Config{
-				Executor: vm.DefaultExecutor,
-				VMName:   vmName,
-				BBPort:   defaultBBPort,
-			})
+			failed := doctor.Run(ctx, out, cfg)
 			if failed > 0 {
 				return fmt.Errorf("%d check(s) FAILED", failed)
 			}
@@ -34,5 +33,7 @@ func init() {
 		},
 	}
 	doctorCmd.PersistentFlags().StringVar(&vmName, "name", envOr("BRIDGE_VM_NAME", defaultVMName), "VM name")
+	doctorCmd.Flags().BoolVar(&smoke, "smoke", false, "Include iMessage round-trip smoke-test placeholder")
+	doctorCmd.Flags().StringVar(&tailnetHost, "tailnet-host", "", "Tailscale FQDN of VM for reachability probe (e.g. vm-claw.tail-abcdef.ts.net)")
 	rootCmd.AddCommand(doctorCmd)
 }

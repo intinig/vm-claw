@@ -30,7 +30,7 @@ func newTailscaleBootstrapCmd() *cobra.Command {
 			}
 
 			vmName := envOr("VM_CLAW_VM_NAME", defaultVMName)
-			inVM := tartExecExecutor{vmName: vmName}
+			inVM := vm.TartExec{VMName: vmName}
 			out := cmd.OutOrStdout()
 
 			fmt.Fprintln(out, "Installing tailscale-app cask inside VM...")
@@ -81,12 +81,3 @@ func resolveAuthKey(flagVal, filePath string) (string, error) {
 	return "", fmt.Errorf("--auth-key or --auth-key-file is required")
 }
 
-// tartExecExecutor implements vm.Executor by shelling out via `tart exec`.
-type tartExecExecutor struct {
-	vmName string
-}
-
-func (e tartExecExecutor) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	full := append([]string{"exec", e.vmName, "--", name}, args...)
-	return vm.DefaultExecutor.Run(ctx, "tart", full...)
-}
