@@ -164,7 +164,7 @@ func init() {
 		},
 	}
 
-	vmCmd.AddCommand(vmCreateCmd, vmRunCmd, vmDestroyCmd, vmInstallAgentCmd, vmUninstallAgentCmd)
+	vmCmd.AddCommand(vmCreateCmd, vmRunCmd, vmDestroyCmd, vmInstallAgentCmd, vmUninstallAgentCmd, newTailscaleBootstrapCmd())
 	rootCmd.AddCommand(vmCmd)
 }
 
