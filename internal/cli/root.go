@@ -16,8 +16,8 @@ var Version = "dev"
 // children onto it via init() functions.
 var rootCmd = &cobra.Command{
 	Use:           "vmclaw",
-	Short:         "Manage the Hermes + iMessage bridge VM stack",
-	Long:          "vmclaw owns the Tart bridge VM, Colima/Docker host bootstrap for Hermes, and the wiring between them.",
+	Short:         "Manage the OpenClaw-on-Sequoia VM stack",
+	Long:          "vmclaw owns the Tart Sequoia VM that hosts OpenClaw and Messages.app, plus the Tailscale lockdown and end-to-end doctor checks.",
 	SilenceUsage:  true,  // don't dump help on RunE errors
 	SilenceErrors: true,  // we print errors ourselves
 	Version:       Version,

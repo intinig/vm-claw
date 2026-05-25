@@ -17,7 +17,7 @@ import (
 // Default Label used by the installer when Options.Label is empty
 // at the high-level Install/Uninstall API. Matches the path embedded
 // in CLAUDE.md's "Recovery paths" section.
-const DefaultLabel = "com.vm-claw.bridge-vm"
+const DefaultLabel = "com.vm-claw.agent"
 
 //go:embed template.plist
 var templateBody string

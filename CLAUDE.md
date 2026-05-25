@@ -4,183 +4,109 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This project hosts [Hermes Agent](https://hermes-agent.nousresearch.com/) on a macOS
-host (in Docker via Colima) and pairs it with a single-purpose **iMessage bridge VM**
-(Tart) so the agent can send/receive iMessage under an Apple ID **distinct** from the
-host user's. Hermes itself does not run inside the VM — the VM exists only to host
-the second Apple identity and the Messages.app stack that goes with it.
+This project hosts the [OpenClaw](https://openclaw.ai) AI agent inside a single-purpose **macOS Sequoia (15.x) VM** (Tart), network-isolated to a Tailscale tailnet, signed into an Apple ID **distinct** from the host user's. The VM IS the agent host — OpenClaw, Messages.app, Tailscale daemon all run inside it.
 
-Two components, used **together** (not independent paths):
+Two components, used **together**:
 
-1. **Hermes on host** (`vmclaw hermes bootstrap`) — bootstraps Colima + docker, runs
-   the `nousresearch/hermes-agent` container with `~/.hermes` bind-mounted to
-   `/opt/data`. Following [the Hermes Docker user guide](https://hermes-agent.nousresearch.com/docs/user-guide/docker).
-2. **iMessage bridge VM** (`vmclaw vm <verb>`) — Tart-based macOS guest, softnet
-   networking, one dedicated user signed in to the bridge Apple ID. Inside, a bridge
-   service exposes an API Hermes calls.
+1. **Sequoia Tart VM** (`vm-claw`) — runs OpenClaw natively (`npm install -g openclaw@latest`), Messages.app signed into the bridge Apple ID, and the Tailscale daemon. Bridged networking on the host's default-route interface (Tahoe vmnet stopgap). macOS Application Firewall set to default-deny inbound.
+2. **`vmclaw` CLI on host** (Go binary in this repo) — VM lifecycle (`vmclaw vm create | run | destroy | install-agent`), Tailscale install + firewall lockdown (`vmclaw vm tailscale-bootstrap`), and end-to-end `vmclaw doctor`.
 
-The VM is **not** an isolation boundary for Hermes (Hermes is already containerized
-and is trusted relative to this project). The VM exists to give iMessage a clean,
-separate identity.
+The VM is **not** an isolation boundary for OpenClaw itself (the agent is trusted relative to this project — it's the user's agent). The VM provides:
+- A separate Apple ID for iMessage, never the host user's.
+- A clean macOS Sequoia runtime, avoiding macOS 26 (Tahoe) iMessage regressions: `openclaw/imsg#90` (group send silent fail), LaunchAgent Full Disk Access propagation, FSEvents coalescing.
+- A Tailscale-only inbound boundary, so the agent is invisible on the LAN.
 
-This repo previously scoped a Tart VM for [OpenClaw](https://openclaw.ai). That scope
-is retired. Some scripts still use the `openclaw` VM name pending migration; treat
-that as known-stale, not a directive. Authoritative current direction lives in
-[`docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md`](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md).
+Authoritative direction lives in [`docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md`](./docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md).
 
-## Hermes-Path Configuration Constraints
+## OpenClaw Configuration Constraints
 
-`vmclaw hermes bootstrap` deliberately does **not** seed `~/.hermes/config.yaml` — the
-container entrypoint copies the default on the first `setup` run (this is the
-upstream-documented flow). Hardening is applied by the user afterward, by editing
-the file or via `hermes config set`.
+`docs/openclaw-config.example.yaml` is the canonical template for `~/.openclaw/config.yaml` inside the VM. When editing, preserve these values — they are the security contract:
 
-When editing `~/.hermes/config.yaml`, preserve these values — they are the security
-contract:
+- `auth.required: true` — WebChat / API auth token required even on tailnet (defense in depth).
+- `permissions.askConfirmation: true` — manual approvals for sensitive actions; equivalent of the old `approvals.mode: manual`.
+- `terminal.persistent: false` — ephemeral sandbox; no state leak across invocations.
+- No `terminal.workspaceMount` — do not bind-mount host paths.
+- `plugins.allowList: [...]` populated; `plugins.autoInstall: false`. Mitigates ClawHavoc-class supply-chain risk. Add plugins by exact name; no wildcards.
+- `channels.imessage.dmPolicy: allowlist` + `channels.imessage.groupPolicy: allowlist` with explicit allowlists; never `open`.
+- `channels.imessage.groups["*"].requireMention: true` — bot replies only on @-mention or configured `mentionPatterns`.
+- Provider keys live directly in `config.yaml` (`chmod 600`, owned by the bridge user). No env injection from outside the VM.
 
-- `terminal.docker_forward_env: []` — keep empty. Credentials reach any sandbox only
-  via skill-declared `required_environment_variables` (auto-forwarded since Hermes
-  v0.5.1).
-- `terminal.container_persistent: false` — ephemeral tmpfs sandbox; persistent state
-  belongs in skill outputs the agent writes back explicitly, not in the container
-  filesystem.
-- `terminal.docker_mount_cwd_to_workspace: false` — explicit `docker_volumes` only,
-  prefer `:ro`.
-- `approvals.mode: manual` — keep prompts on for dangerous commands. **Required**
-  for the iMessage skill so sends are user-approved (a compromised Hermes could
-  otherwise send arbitrary messages from the bridge identity).
+## Network Posture
 
-These keys are meaningful when `terminal.backend` is `docker` (nested DinD inside
-the Hermes container). Under the default `local` backend the Hermes container itself
-is the sandbox and the keys are inert — apply them anyway so any future switch is
-safe by default.
+- **Inbound to VM:** Tailscale-only. OpenClaw WebChat binds to `127.0.0.1` (Tailscale Serve forwards from tailnet) or `tailscale0`. Nothing binds `0.0.0.0`. macOS Application Firewall default-denies all incoming on bridged + loopback interfaces.
+- **Outbound from VM:** **Unrestricted by design.** An AI agent with restricted outbound is useless. Tailscale ACLs do not restrict outbound; the macOS firewall is inbound-only. Do not propose outbound allowlists — see `~/.claude/projects/-Users-gintini-s-vm-claw/memory/feedback_agent_outbound_unrestricted.md`.
+- **Tailnet ACL:** inbound to `tag:vm-claw` allowed only from the user's tagged devices. No outbound ACL rules.
 
-When invoking `docker run` for the Hermes container, do **not** pass arbitrary `-e`
-flags from the surrounding shell environment. Provider keys should sit in
-`~/.hermes/.env` (chmod 600); the entrypoint loads them. Extra `-e` flags should be
-limited to what the docs explicitly document (e.g. `GATEWAY_HEALTH_URL` for the
-dashboard container).
+## Apple ID Discipline
 
-## Hermes-Path Multi-Profile
+- Never sign the VM into the host user's Apple ID. Use a separate Apple ID dedicated to vm-claw.
+- iMessage in a VM is a grey area with Apple; do not put a personal account at risk.
+- The bridge Apple ID is portable across rebuilds; only local Messages history and skill/memory state are lost on `vmclaw vm destroy`.
 
-Multiple independent agents per host
-([upstream pattern](https://hermes-agent.nousresearch.com/docs/user-guide/docker#multi-profile-support)).
-Knobs (env vars consumed by `vmclaw hermes bootstrap`):
+## GUI session always active
 
-- `HERMES_PROFILE_NAME` — profile name. Default `default`. Drives the defaults below.
-- `HERMES_HOME` — host data dir. Default `~/.hermes` for `default`, else
-  `~/.hermes-<profile>`.
-- `HERMES_GATEWAY_NAME` / `HERMES_DASHBOARD_NAME` — container names. Default
-  `hermes` / `hermes-dashboard` for `default`, else `hermes-<profile>` /
-  `hermes-dashboard-<profile>`.
-- `HERMES_GATEWAY_PORT` (default `8642`) / `HERMES_DASHBOARD_PORT` (default `9119`).
-- `HERMES_NETWORK` — docker network shared by the gateway+dashboard pair. Default
-  `hermes-net-<profile>`.
+Messages.app does not run from a background launchd context. The bridge service must run as a LaunchAgent under the bridge user (not a LaunchDaemon), and the user must auto-login at boot. This applies to OpenClaw's gateway too (`openclaw onboard --install-daemon` writes a LaunchAgent).
 
-Run the script once per profile with distinct ports. Never run two gateway
-containers against the same data dir — session/memory stores aren't designed for
-concurrent writes.
+## Networking: bridged-mode workaround for the Tahoe vmnet regression
 
-Note: the iMessage bridge VM is bound to the Apple ID inside it, so a single bridge
-VM can only serve one iMessage identity. If multiple Hermes profiles need iMessage
-under different identities, plan for one bridge VM per identity.
+The VM is launched with `--net-bridged=<iface>` where `<iface>` is the host's default-route interface (auto-detected via `DetectBridgeInterface`; override via `BRIDGE_HOST_IFACE`).
 
-## iMessage Bridge VM Requirements
+This is a workaround for a confirmed macOS Tahoe regression that broke the `Shared_Net_Address` config key for `--net-softnet`/vmnet shared mode. softnet remains the long-term goal once Apple/Cirrus ship a fix; revert by flipping the `tart run` flag and the LaunchAgent plist back to `--net-softnet`.
 
-The Tart VM must enforce:
-
-- **Bridged networking on the host's LAN interface (Tahoe stopgap)** — the VM
-  is launched with `--net-bridged=<iface>` where `<iface>` is the host's
-  default-route interface (auto-detected; override via `BRIDGE_HOST_IFACE`).
-  This is a workaround for a confirmed macOS Tahoe regression that broke the
-  `Shared_Net_Address` config key for `--net-softnet`/vmnet shared mode (see
-  README.md "Networking: bridged-mode workaround for the Tahoe vmnet regression"
-  for upstream tracking). softnet remains the long-term goal once Apple/Cirrus
-  ship a fix; revert by flipping the `tart run` flag and the LaunchAgent plist
-  back to `--net-softnet`.
-- **Distinct Apple ID** — never sign the bridge VM into the host user's Apple ID.
-  Use a fresh Apple ID created for this purpose. iMessage in a VM is a grey area
-  with Apple; do not put a personal account at risk.
-- **GUI session always active** — Messages.app does not run from a background
-  launchd context. The bridge service must be a LaunchAgent under the bridge user
-  (not a LaunchDaemon), and the user must auto-login at boot.
-
-Bridged-mode caveat: the VM and its BlueBubbles port live on your home LAN
-directly, not behind a private NAT. BlueBubbles is reachable by every device on
-the LAN; the only thing keeping that boring is your BlueBubbles password. Don't
-deploy this on an untrusted shared network.
-
-Clipboard sharing left enabled for usability. The read-only shared folder from the
-former OpenClaw scope is no longer load-bearing for security; if used at all it is
-for one-off file hand-offs.
-
-## Bridge Transport
-
-Hermes-on-host talks to the bridge VM via [BlueBubbles Server](https://bluebubbles.app/server/),
-which runs inside the VM. Hermes' first-party BlueBubbles connector handles both
-sends (Hermes → BlueBubbles REST) and receives (BlueBubbles webhook → Hermes
-gateway). No custom skill, no custom shim. Under the bridged-mode stopgap the
-VM and host share one LAN, so the gateway container reaches the VM via
-`--add-host bridge-vm:$(tart ip bridge-vm)` and the VM's BlueBubbles webhook
-posts straight to the host's LAN IP — no socat forward, no softnet-gateway hop.
-The original softnet topology lives in the
-[design spec](./docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md#network-model)
-and is what we'll revert to once the Tahoe regression is fixed upstream.
+Bridged-mode caveat that USED TO matter under Hermes-era BlueBubbles is now neutralized: the VM exposes no inbound services on the LAN because of the macOS Application Firewall default-deny + Tailscale-only binding. Even on a hostile LAN, the only thing reachable on the VM is ARP/ping.
 
 ## Tart Commands Reference
 
 ```bash
-# Create a macOS VM from IPSW or restore image
-tart create <vm-name> --from-ipsw <path>
+# Clone from Cirrus OCI base image
+tart clone ghcr.io/cirruslabs/macos-sequoia-base@sha256:<digest> vm-claw
 
-# Clone from a base image
-tart clone <source> <vm-name>
+# Run VM with bridged networking
+tart run vm-claw --net-bridged=en0
 
-# Run VM with options
-tart run <vm-name> --net-softnet --dir=shared:~/path/to/shared:ro
-
-# List VMs
+# List VMs and base images
 tart list
 
+# Get VM IP
+tart ip vm-claw
+
+# Exec inside VM (uses guest SSH automatically)
+tart exec vm-claw -- /usr/bin/sw_vers -productVersion
+
 # Delete VM
-tart delete <vm-name>
+tart delete vm-claw
 ```
 
 ## Key Tart Flags for Isolation
 
-- `--net-bridged=<iface>` — current setting. Bridges the VM directly onto
-  `<iface>` (host's default-route interface). The VM gets a DHCP lease from the
-  LAN router and is reachable peer-to-peer with the host. No NAT, no isolation.
-  Stopgap until the Tahoe vmnet regression is fixed (see README.md).
-- `--net-softnet` — original setting. Routes VM traffic through Cirrus' softnet
-  helper for its own NAT independent of the host's network stack. Broken on
-  Tahoe because `defaults write … Shared_Net_Address` is no longer honored, so
-  bridge100 can collide with the host LAN's subnet. Revert to this once Apple
-  fixes the regression.
-- `--dir=<name>:<host-path>:ro` — Mounts read-only shared folder. Optional in the
-  current scope; not load-bearing.
+- `--net-bridged=<iface>` — current setting; bridges VM onto `<iface>` (host's default-route interface). The VM gets a DHCP lease from the LAN router. Tahoe-host stopgap until vmnet softnet regression is fixed.
+- `--net-softnet` — original setting (no longer used). Will return once Apple/Cirrus fix vmnet.
+- No `--dir` shared folders are needed in the new scope; use Tailscale SCP for file hand-offs.
 
 ## Recovery paths
 
 When something silently breaks, work down this list before deeper debugging:
 
 1. **`vmclaw doctor`** — green/red status across the chain.
-2. **VM not booting / no IP** — `tart list` and `tart ip bridge-vm`. If the VM exists but has no IP, run `vmclaw vm run` in another terminal, or `vmclaw vm install-agent` to load the LaunchAgent. In bridged mode the VM gets its IP from your LAN router's DHCP — if the LAN is unhealthy, so is the VM.
-3. **Wrong bridge interface picked up** — auto-detect uses the IPv4 default route, so a VPN that hijacks the default route can pick the wrong interface. Override with `BRIDGE_HOST_IFACE=en0 vmclaw vm run` (and re-run `vmclaw vm install-agent` so the LaunchAgent persists the override).
-4. **Container can't reach `bridge-vm`** — usually means the gateway container was started without `--add-host bridge-vm:$(tart ip bridge-vm)`. Restart the container with the flag (see the spec's runbook §E for the exact docker run).
-5. **iMessage stops sending** — log into the VM's GUI, open Messages.app, confirm iMessage is still active. macOS sleep on the VM is the most common cause; verify "Display sleep when on power adapter" is still off.
-6. **Apple ID activation loop** — sign out of the Apple ID in Messages (not System Settings), wait 30 seconds, sign back in. If persistent, recreate the Apple ID; running iMessage in a VM is a grey area with Apple.
-7. **VM is unrecoverable / suspect / over-updated** — `vmclaw vm destroy --yes && vmclaw bootstrap`, then re-run the manual runbook. The bridge identity's Apple ID is portable; only the local Messages history and BlueBubbles password are lost.
+2. **VM not booting / no IP** — `tart list` and `tart ip vm-claw`. If the VM exists but has no IP, run `vmclaw vm run`, or `vmclaw vm install-agent` to load the LaunchAgent. Bridged DHCP comes from your LAN router.
+3. **Wrong bridge interface picked up** — auto-detect uses the IPv4 default route; a VPN can hijack it. Override with `BRIDGE_HOST_IFACE=en0 vmclaw vm run` and re-run `vmclaw vm install-agent`.
+4. **Host cannot reach VM over Tailscale** — `tailscale status` on host; verify `vm-claw` shows up. Inside VM: `tailscale status` and `tailscale up --reset` if auth expired.
+5. **iMessage stops sending** — log into the VM GUI, open Messages.app, confirm iMessage is still active. macOS sleep on the VM is the most common cause; verify "Display sleep when on power adapter" is off.
+6. **OpenClaw responding from wrong handle / not responding** — check `~/.openclaw/config.yaml` for `channels.imessage` allowlist drift; check the gateway LaunchAgent is loaded.
+7. **Apple ID activation loop** — sign out in Messages (not System Settings), wait 30 s, sign back in. If persistent, recreate the Apple ID; running iMessage in a VM is a grey area with Apple.
+8. **VM is unrecoverable / suspect / over-updated** — `vmclaw vm destroy --yes && vmclaw bootstrap`, then re-run `docs/runbook-openclaw-install.md`. The bridge Apple ID is portable; only local Messages history and OpenClaw skill/memory state are lost.
+9. **Doctor red on negative connectivity (bridged port unexpectedly reachable)** — firewall is broken. Re-run `vmclaw vm tailscale-bootstrap` to reapply, then doctor again.
 
 ## Architecture
 
-Go CLI project. Expected structure:
+Go CLI project. Current structure:
 
-- `cmd/vmclaw/main.go` + `internal/` — the `vmclaw` CLI binary that owns Tart VM
-  lifecycle (`vmclaw vm <verb>`), Colima/Docker bootstrap (`vmclaw hermes bootstrap`),
-  BlueBubbles env wiring (`vmclaw hermes wire`), end-to-end healthchecks
-  (`vmclaw doctor`), and the orchestrator (`vmclaw bootstrap` + `vmclaw bootstrap finalize`).
-- `Makefile` — `make` to build, `make install` to put the binary on $PATH.
-- `~/.hermes` — host-side dir bind-mounted into the Hermes container as `/opt/data`.
-- `docs/superpowers/specs/2026-05-04-hermes-imessage-bridge-vm-design.md` — design,
-  decisions log, migration plan. Authoritative for current direction.
+- `cmd/vmclaw/main.go` — entrypoint.
+- `internal/cli/` — Cobra subcommands: `bootstrap`, `vm`, `doctor`. No `hermes` subcommand (removed in this rescope).
+- `internal/vm/` — Tart wrapper, vmnet collision detection, bridge-interface detection, brew helpers, macOS Application Firewall wrapper, shared `TartExec` for in-VM command execution.
+- `internal/tailscale/` — Tailscale install/up/status wrappers over a `vm.Executor` (so they work via `tart exec` inside the VM).
+- `internal/launchagent/` — host-side LaunchAgent that auto-starts the VM at login.
+- `internal/doctor/` — chain-walking doctor checks.
+- `docs/openclaw-config.example.yaml` — canonical OpenClaw config template.
+- `docs/runbook-openclaw-install.md` — manual steps to install OpenClaw inside the VM.
+- `docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md` — authoritative spec.

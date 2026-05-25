@@ -1,7 +1,8 @@
 # Hermes + iMessage bridge VM — design spec
 
 **Date:** 2026-05-04
-**Status:** Approved (per brainstorming session); implemented except for the
+**Status:** **Superseded** by [`2026-05-25-openclaw-sequoia-vm-design.md`](./2026-05-25-openclaw-sequoia-vm-design.md) on 2026-05-25. Kept for archaeology. The Hermes-on-host model and the Tahoe bridge VM are no longer in scope; vm-claw now hosts OpenClaw inside a Sequoia VM. See the new spec's "Migration Path" section for the diff.
+Original status: Approved (per brainstorming session); implemented except for the
 softnet networking layer.
 **Replaces:** the prior `SPEC.md` at the repo root and the OpenClaw scope it inherited from.
 
