@@ -1,112 +1,50 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) in this repository. The runbook is `README.md`; the designs are `docs/superpowers/specs/2026-09-30-linux-vm-migration-design.md` and its addendum `docs/superpowers/specs/2026-10-02-bot-user-sebastian-design.md`; verified facts are in `docs/verification.md`.
 
-## Project Overview
+## Project
 
-This project hosts the [OpenClaw](https://openclaw.ai) AI agent inside a single-purpose **macOS Sequoia (15.x) VM** (Tart), network-isolated to a Tailscale tailnet, signed into an Apple ID **distinct** from the host user's. The VM IS the agent host — OpenClaw, Messages.app, Tailscale daemon all run inside it.
+Shell and Node tooling that builds and operates a security-isolated Lima VM (`claw`, Debian 13 arm64, `vz`) running an OpenClaw gateway on a Mac mini host. It replaced a Tart macOS VM on 2026-10-01. The target layout: the bot runs as the unprivileged account `sebastian` once the production switch (`migrate/rehome.sh`) has run; until then, and after a rollback of it, it runs as `admin`, which stays Lima's login and maintenance user. Check which before using `host/claw.sh sebastian --` (README intro).
 
-Two components, used **together**:
-
-1. **Sequoia Tart VM** (`vm-claw`) — runs OpenClaw natively (`npm install -g openclaw@latest`), Messages.app signed into the bridge Apple ID, and the Tailscale daemon. Bridged networking on the host's default-route interface (Tahoe vmnet stopgap). macOS Application Firewall set to default-deny inbound.
-2. **`vmclaw` CLI on host** (Go binary in this repo) — VM lifecycle (`vmclaw vm create | run | destroy | install-agent`), Tailscale install + firewall lockdown (`vmclaw vm tailscale-bootstrap`), and end-to-end `vmclaw doctor`.
-
-The VM is **not** an isolation boundary for OpenClaw itself (the agent is trusted relative to this project — it's the user's agent). The VM provides:
-- A separate Apple ID for iMessage, never the host user's.
-- A clean macOS Sequoia runtime, avoiding macOS 26 (Tahoe) iMessage regressions: `openclaw/imsg#90` (group send silent fail), LaunchAgent Full Disk Access propagation, FSEvents coalescing.
-- A Tailscale-only inbound boundary, so the agent is invisible on the LAN.
-
-Authoritative direction lives in [`docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md`](./docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md).
-
-## OpenClaw Configuration Constraints
-
-`docs/openclaw-config.example.yaml` is the canonical template for `~/.openclaw/config.yaml` inside the VM. When editing, preserve these values — they are the security contract:
-
-- `auth.required: true` — WebChat / API auth token required even on tailnet (defense in depth).
-- `permissions.askConfirmation: true` — manual approvals for sensitive actions; equivalent of the old `approvals.mode: manual`.
-- `terminal.persistent: false` — ephemeral sandbox; no state leak across invocations.
-- No `terminal.workspaceMount` — do not bind-mount host paths.
-- `plugins.allowList: [...]` populated; `plugins.autoInstall: false`. Mitigates ClawHavoc-class supply-chain risk. Add plugins by exact name; no wildcards.
-- `channels.imessage.dmPolicy: allowlist` + `channels.imessage.groupPolicy: allowlist` with explicit allowlists; never `open`.
-- `channels.imessage.groups["*"].requireMention: true` — bot replies only on @-mention or configured `mentionPatterns`.
-- Provider keys live directly in `config.yaml` (`chmod 600`, owned by the bridge user). No env injection from outside the VM.
-
-## Network Posture
-
-- **Inbound to VM:** Tailscale-only. OpenClaw WebChat binds to `127.0.0.1` (Tailscale Serve forwards from tailnet) or `tailscale0`. Nothing binds `0.0.0.0`. macOS Application Firewall default-denies all incoming on bridged + loopback interfaces.
-- **Outbound from VM:** **Unrestricted by design.** An AI agent with restricted outbound is useless. Tailscale ACLs do not restrict outbound; the macOS firewall is inbound-only. Do not propose outbound allowlists — see `~/.claude/projects/-Users-gintini-s-vm-claw/memory/feedback_agent_outbound_unrestricted.md`.
-- **Tailnet ACL:** inbound to `tag:vm-claw` allowed only from the user's tagged devices. No outbound ACL rules.
-
-## Apple ID Discipline
-
-- Never sign the VM into the host user's Apple ID. Use a separate Apple ID dedicated to vm-claw.
-- iMessage in a VM is a grey area with Apple; do not put a personal account at risk.
-- The bridge Apple ID is portable across rebuilds; only local Messages history and skill/memory state are lost on `vmclaw vm destroy`.
-
-## GUI session always active
-
-Messages.app does not run from a background launchd context. The bridge service must run as a LaunchAgent under the bridge user (not a LaunchDaemon), and the user must auto-login at boot. This applies to OpenClaw's gateway too (`openclaw onboard --install-daemon` writes a LaunchAgent).
-
-## Networking: bridged-mode workaround for the Tahoe vmnet regression
-
-The VM is launched with `--net-bridged=<iface>` where `<iface>` is the host's default-route interface (auto-detected via `DetectBridgeInterface`; override via `BRIDGE_HOST_IFACE`).
-
-This is a workaround for a confirmed macOS Tahoe regression that broke the `Shared_Net_Address` config key for `--net-softnet`/vmnet shared mode. softnet remains the long-term goal once Apple/Cirrus ship a fix; revert by flipping the `tart run` flag and the LaunchAgent plist back to `--net-softnet`.
-
-Bridged-mode caveat that USED TO matter under Hermes-era BlueBubbles is now neutralized: the VM exposes no inbound services on the LAN because of the macOS Application Firewall default-deny + Tailscale-only binding. Even on a hostile LAN, the only thing reachable on the VM is ARP/ping.
-
-## Tart Commands Reference
+## Commands
 
 ```bash
-# Clone from Cirrus OCI base image
-tart clone ghcr.io/cirruslabs/macos-sequoia-base@sha256:<digest> vm-claw
-
-# Run VM with bridged networking
-tart run vm-claw --net-bridged=en0
-
-# List VMs and base images
-tart list
-
-# Get VM IP
-tart ip vm-claw
-
-# Exec inside VM (uses guest SSH automatically)
-tart exec vm-claw -- /usr/bin/sw_vers -productVersion
-
-# Delete VM
-tart delete vm-claw
+make lint                        # shellcheck on every .sh
+make unit                        # node --test plus the bash suites (import, home-roots, rehome, backup, install, claw, acceptance, stack-check, lib, vercmp)
+make test                        # lint + unit + unit-bash32
+host/claw.sh create|deploy|provision|start|stop|shell|destroy
+host/claw.sh sebastian -- <cmd>  # a command as the bot, with its user-session environment
+CLAW_INSTANCE=<name> host/...    # another instance (a drill, a rebuild); the default is claw
+host/install.sh                  # host: Lima, restic, backup pull agent (run over ssh -t)
+tests/isolation-check.sh         # host side
 ```
 
-## Key Tart Flags for Isolation
+Run the bash suites under `/bin/bash` 3.2 too (macOS default), the scripts included: `PATH="/bin:$PATH" /bin/bash <suite>`. No `mapfile`, no associative arrays.
 
-- `--net-bridged=<iface>` — current setting; bridges VM onto `<iface>` (host's default-route interface). The VM gets a DHCP lease from the LAN router. Tahoe-host stopgap until vmnet softnet regression is fixed.
-- `--net-softnet` — original setting (no longer used). Will return once Apple/Cirrus fix vmnet.
-- No `--dir` shared folders are needed in the new scope; use Tailscale SCP for file hand-offs.
+## Global constraints
 
-## Recovery paths
-
-When something silently breaks, work down this list before deeper debugging:
-
-1. **`vmclaw doctor`** — green/red status across the chain.
-2. **VM not booting / no IP** — `tart list` and `tart ip vm-claw`. If the VM exists but has no IP, run `vmclaw vm run`, or `vmclaw vm install-agent` to load the LaunchAgent. Bridged DHCP comes from your LAN router.
-3. **Wrong bridge interface picked up** — auto-detect uses the IPv4 default route; a VPN can hijack it. Override with `BRIDGE_HOST_IFACE=en0 vmclaw vm run` and re-run `vmclaw vm install-agent`.
-4. **Host cannot reach VM over Tailscale** — `tailscale status` on host; verify `vm-claw` shows up. Inside VM: `tailscale status` and `tailscale up --reset` if auth expired.
-5. **iMessage stops sending** — log into the VM GUI, open Messages.app, confirm iMessage is still active. macOS sleep on the VM is the most common cause; verify "Display sleep when on power adapter" is off.
-6. **OpenClaw responding from wrong handle / not responding** — check `~/.openclaw/config.yaml` for `channels.imessage` allowlist drift; check the gateway LaunchAgent is loaded.
-7. **Apple ID activation loop** — sign out in Messages (not System Settings), wait 30 s, sign back in. If persistent, recreate the Apple ID; running iMessage in a VM is a grey area with Apple.
-8. **VM is unrecoverable / suspect / over-updated** — `vmclaw vm destroy --yes && vmclaw bootstrap`, then re-run `docs/runbook-openclaw-install.md`. The bridge Apple ID is portable; only local Messages history and OpenClaw skill/memory state are lost.
-9. **Doctor red on negative connectivity (bridged port unexpectedly reachable)** — firewall is broken. Re-run `vmclaw vm tailscale-bootstrap` to reapply, then doctor again.
+- The repo is public: never commit secrets, IPs, phone numbers, WhatsApp JIDs, account names, job IDs, tailnet names or key fragments. Never commit identifiers. Scripts find things by pattern, not by hard-coded identifier; docs use placeholders such as `<host>`, `<lan-router-ip>`, `<owner-number>`, `<name>`.
+- Two accounts in the guest, from the switch on. `admin` (home `/Users/admin`, passwordless sudo) is Lima's login and maintenance user and owns no bot data or units. The bot is `sebastian`: UID and GID 2000, home `/home/sebastian` at mode 700, password locked, its own group only, no sudo, no SSH login (`DenyUsers sebastian`, no `authorized_keys`), linger, Tailscale operator. Its name, ids and home live only in `provision/bot.sh`; scripts that run as the bot use `$HOME`.
+- The guest's repo is `/opt/vm-claw`: root-owned, read-only for everyone else, put there only by `host/claw.sh deploy` (a `git archive` of HEAD). Never stage anything root will run in a directory the bot can write, such as `/tmp`.
+- Look inside the bot's home only through `sudo` or as the bot: as admin, a test on a mode-700 directory fails for want of permission and reads as "absent".
+- Guest timezone `UTC`.
+- Pinned versions (`provision/versions.env`): OpenClaw `2026.10.2` (a floor: provisioning never downgrades), node major `24`, wacli `0.13.0`, sag `0.4.0`. OpenClaw upgrades are a maintenance action as admin (README "Upgrades"): the bot cannot write the global npm install.
+- Isolation: `mounts: []`; exactly one port forward (guest `127.0.0.1:18789` to host `127.0.0.1:18789`); NAT only; guest egress to RFC1918/link-local dropped except DNS and DHCP to Lima's gateway. Only root can change the `inet claw` table, and the bot is not root; `tests/acceptance.sh` passes that item only on a real "Operation not permitted" denial.
+- Never run two gateways with the same WhatsApp credentials. Rehearsal and drill imports exclude them and disable cron. `migrate/rehome.sh` proves admin's gateway down before the bot's starts, and the bot's down before admin's restarts. Its phases take the lock `/run/lock/claw-rehome.lock` and record progress in `/var/lib/claw-rehome/`. Acceptance in `rehearsal` mode requires the guard replay to report WhatsApp unlinked (`skip: WhatsApp not linked`); `final` requires `restart:`.
+- `import.sh final` refuses `mode=rehearsal`, accepts `mode=nightly` as final; `rehearsal` refuses an archive with WhatsApp credentials; `drill` strips them. From another home it rewrites that home in live configuration, fails on anything left over, and installs no `authorized_keys`; it refuses a symlinked `~/.ssh` and, cross-home, takes only `ocsb_vault`, `ocsb_vault.pub`, `config` and `known_hosts` into `.ssh`. Do not loosen these.
+- Never run git inside the guest (a worktree's `.git` file does not resolve there). Run `openclaw doctor --non-interactive` only with the gateway stopped: it writes.
+- Never touch the live guest, the old VM, the appliance or a gateway from a docs or code task.
+- OpenClaw posture (carried over from the Tart era, still true of the live config): the gateway binds to loopback and is reachable from the tailnet only through Tailscale Serve; token auth stays on; WhatsApp DM and group policies are allowlists, never `open`; plugins are added by exact name, never by wildcard or auto-install.
 
 ## Architecture
 
-Go CLI project. Current structure:
+- `lima/claw.yaml`, `provision/`: VM definition and idempotent guest provisioning (root); `provision/bot.sh` names the bot account.
+- `host/`: `claw.sh` wrapper (`deploy`, `sebastian -- <cmd>`, `CLAW_INSTANCE`), `install.sh`, `pull-backups.sh` (streams the bot's nights through `sudo -n -u sebastian`) and its launchd plist.
+- `migrate/`: `export.sh` (old VM), `import.sh` (guest, as the bot), the binary-path and home-path rewrites, the free-text scan, and `rehome.sh` (the in-place move to the bot account).
+- `ops/`: listener guard (with its replay fixture), nightly backup, `backup-health.mjs`, shared dotenv-token parser.
+- `tests/`: isolation, firewall, stack (as admin) and acceptance (as the bot) checks.
 
-- `cmd/vmclaw/main.go` — entrypoint.
-- `internal/cli/` — Cobra subcommands: `bootstrap`, `vm`, `doctor`. No `hermes` subcommand (removed in this rescope).
-- `internal/vm/` — Tart wrapper, vmnet collision detection, bridge-interface detection, brew helpers, macOS Application Firewall wrapper, shared `TartExec` for in-VM command execution.
-- `internal/tailscale/` — Tailscale install/up/status wrappers over a `vm.Executor` (so they work via `tart exec` inside the VM).
-- `internal/launchagent/` — host-side LaunchAgent that auto-starts the VM at login.
-- `internal/doctor/` — chain-walking doctor checks.
-- `docs/openclaw-config.example.yaml` — canonical OpenClaw config template.
-- `docs/runbook-openclaw-install.md` — manual steps to install OpenClaw inside the VM.
-- `docs/superpowers/specs/2026-05-25-openclaw-sequoia-vm-design.md` — authoritative spec.
+## Rollback
+
+- Of the move to the bot account: `migrate/rehome.sh rollback`, until the retired copy is deleted (README "Rollback", which also covers a retire that died half-way). On production it was deleted on 2026-10-16: restore from a backup instead (README "Restore").
+- The Tart VM was deleted on 2026-10-16; there is no rollback to it.

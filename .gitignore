@@ -12,7 +12,8 @@
 .env
 .env.*
 
-# Go build
-bin/
-vmclaw
-*.test
+# Migration exports and backups carry credentials — never commit them
+claw-export-*/
+*.tar.gz
+*.env.local
+__pycache__/

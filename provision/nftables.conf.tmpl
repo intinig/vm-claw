@@ -1,0 +1,20 @@
+#!/usr/sbin/nft -f
+# Egress policy: the guest may reach the internet and the tailnet, never the host LAN.
+# Replace only our own table (declare, delete, re-declare works whether or not it exists).
+# Never "flush ruleset": Lima's nat table and Tailscale's tables must survive a re-provision.
+table inet claw
+delete table inet claw
+table inet claw {
+  set lima_gw { type ipv4_addr; elements = { @GW@ } }
+  chain output {
+    type filter hook output priority 0; policy accept;
+    oifname "lo" accept
+    ct state established,related accept
+    meta l4proto ipv6-icmp accept
+    ip daddr @lima_gw udp dport { 53, 67 } accept
+    ip daddr @lima_gw tcp dport 53 accept
+    ip daddr 100.64.0.0/10 accept
+    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 } counter drop
+    ip6 daddr { fc00::/7, fe80::/10 } counter drop
+  }
+}

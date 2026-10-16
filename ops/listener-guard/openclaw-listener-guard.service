@@ -1,0 +1,7 @@
+[Unit]
+Description=Restart the OpenClaw gateway when its WhatsApp listener is stranded
+
+[Service]
+Type=oneshot
+Environment=GUARD_LOG_DIR=/tmp/openclaw
+ExecStart=/usr/bin/node %h/ops/listener-guard/guard.mjs
