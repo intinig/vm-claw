@@ -1,0 +1,6 @@
+[Unit]
+Description=Nightly OpenClaw backup
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/ops/backup/nightly-backup.sh

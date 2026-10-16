@@ -1,0 +1,43 @@
+# Isolated Debian 13 guest for OpenClaw. See docs/superpowers/specs/2026-09-30-linux-vm-migration-design.md
+minimumLimaVersion: 2.0.0
+
+# Only the image. The stock `debian-13` template also pulls in
+# `_default/mounts`, which mounts the host home directory — never include it.
+base:
+- template:_images/debian-13
+
+vmType: vz
+cpus: 4
+memory: 8GiB
+disk: 100GiB
+timezone: UTC
+
+user:
+  name: admin
+  # admin is Lima's login and maintenance user; its home keeps the old macOS guest's path. Once the production switch
+  # has run (migrate/rehome.sh), the bot and its state live in the unprivileged account sebastian (/home/sebastian),
+  # which provisioning creates; until then the bot runs as admin.
+  home: /Users/admin
+
+mounts: []
+containerd:
+  system: false
+  user: false
+
+ssh:
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+
+portForwards:
+# The gateway, for the appliance face app. Nothing else leaves the guest.
+- guestIP: 127.0.0.1
+  guestPort: 18789
+  hostIP: 127.0.0.1
+  hostPort: 18789
+# Neutralise Lima's built-in catch-all forward of every guest port.
+- guestIP: 127.0.0.1
+  proto: any
+  ignore: true
+- guestIP: 0.0.0.0
+  proto: any
+  ignore: true

@@ -1,0 +1,9 @@
+{"0":"{\"subsystem\":\"gateway\"}","1":"gateway ready","_meta":{"date":"2026-09-30T08:00:00.000Z","logLevelName":"INFO"}}
+{"0":"{\"subsystem\":\"gateway/channels/whatsapp\"}","1":"Listening for WhatsApp inbound messages (DM + all groups)","_meta":{"date":"2026-09-30T08:00:05.000Z","logLevelName":"INFO"}}
+{"0":"{\"subsystem\":\"gateway/channels/whatsapp\"}","1":"No active WhatsApp Web listener (account: default)","_meta":{"date":"2026-09-30T08:01:00.000Z","logLevelName":"WARN"}}
+{"0":"{\"subsystem\":\"cron\"}","1":"job finished","_meta":{"date":"2026-09-30T08:30:00.000Z","logLevelName":"INFO"}}
+gateway: a plain-text line that is not JSON and is skipped
+{"0":"{\"subsystem\":\"gateway\"}","1":"Gateway client authority closed before dispatching cron.list","_meta":{"date":"2026-09-30T09:00:30.000Z","logLevelName":"WARN"}}
+{"0":"{\"subsystem\":\"gateway/channels/whatsapp\"}","1":"The reply channel changed or cannot preserve its sender; delivery was not started.","_meta":{"date":"2026-09-30T09:00:32.000Z","logLevelName":"WARN"}}
+{"1":"No active WhatsApp Web listener (account: default)","_meta":{"date":"not a date"}}
+{"0":"{\"subsystem\":\"gateway/channels/whatsapp\"}","1":"No active WhatsApp Web listener (account: default)","_meta":{"date":"2026-09-30T09:03:00.000Z","logLevelName":"WARN"}}
