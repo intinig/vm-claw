@@ -41,7 +41,7 @@ Run the bash suites under `/bin/bash` 3.2 too (macOS default), the scripts inclu
 - `lima/claw.yaml`, `provision/`: VM definition and idempotent guest provisioning (root); `provision/bot.sh` names the bot account.
 - `host/`: `claw.sh` wrapper (`deploy`, `sebastian -- <cmd>`, `CLAW_INSTANCE`), `install.sh`, `pull-backups.sh` (streams the bot's nights through `sudo -n -u sebastian`) and its launchd plist.
 - `migrate/`: `export.sh` (old VM), `import.sh` (guest, as the bot), the binary-path and home-path rewrites, the free-text scan, and `rehome.sh` (the in-place move to the bot account).
-- `ops/`: listener guard (with its replay fixture), nightly backup, `backup-health.mjs`, shared dotenv-token parser.
+- `ops/`: listener guard (with its replay fixture), nightly backup, `backup-health.mjs`, shared dotenv-token parser, the browser's display (Xvfb user unit plus a drop-in giving the gateway `DISPLAY`: headless Chromium is blocked by Cloudflare).
 - `tests/`: isolation, firewall, stack (as admin) and acceptance (as the bot) checks.
 
 ## Rollback

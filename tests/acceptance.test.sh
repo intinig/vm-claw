@@ -82,6 +82,11 @@ Gateway reachable.
   workspaceDir: $HOME/.openclaw/workspace
   dbPath: $HOME/.openclaw/memory/main.sqlite
   files: 42, chunks: 310" ;;
+  "browser status")  reply browser 'profile: openclaw
+enabled: true
+running: false
+browser: unknown
+headless: false (default)' ;;
 esac
 exit 0
 EOF
@@ -158,6 +163,7 @@ case "$*" in
   "--user show openclaw-listener-guard.service -p Environment --value") reply environment "GUARD_LOG_DIR=$FAKE_GWLOG" ;;
   "--user is-enabled openclaw-nightly-backup.timer") reply enabled_nightly enabled ;;
   "--user is-enabled "*) reply "enabled" "enabled" ;;
+  "--user is-active openclaw-xvfb.service") reply xvfb active ;;
 esac
 reply systemctl ""
 EOF
@@ -264,11 +270,12 @@ I_REPLAY="listener guard replays a stranded-listener log and would restart"
 I_REFUSE="listener guard refuses --now without --dry-run"
 I_GWLOG="gateway log dir belongs to the bot account (the guard reads it)"
 I_MEMORY="memory index paths are under this home"
+I_BROWSER="managed browser has a display (headed, not the headless fallback)"
 I_VAULT="vault remote reachable with deploy key"
 I_WA="WhatsApp linked + connected"
 I_WACLI="wacli authenticated"
 I_HARVEST="harvest health ok"
-rehearsal_items=$(printf '%s\n' "$I_ROOT" "$I_OWNER" "$I_AUDIT" "$I_UPDATE" "$I_PRIMARY" "$I_FALLBACK" "$I_FW" "$I_GUARD" "$I_REPLAY" "$I_REFUSE" "$I_GWLOG" "$I_MEMORY" "$I_VAULT")
+rehearsal_items=$(printf '%s\n' "$I_ROOT" "$I_OWNER" "$I_AUDIT" "$I_UPDATE" "$I_PRIMARY" "$I_FALLBACK" "$I_FW" "$I_GUARD" "$I_REPLAY" "$I_REFUSE" "$I_GWLOG" "$I_MEMORY" "$I_BROWSER" "$I_VAULT")
 final_items=$(printf '%s\n' "$rehearsal_items" "$I_WA" "$I_WACLI" "$I_HARVEST")
 n_reh=$(printf '%s\n' "$rehearsal_items" | wc -l | tr -d ' ')
 n_fin=$(printf '%s\n' "$final_items" | wc -l | tr -d ' ')
@@ -713,6 +720,21 @@ sessionsDir: /home/other/x" FAIL
 item_with rehearsal "$I_MEMORY" memory "workspaceDir: $t/home/.openclaw/workspace
 sessionsDir: $t/home/data/sessions" PASS
 both_ways rehearsal "$I_MEMORY" memory "Memory search is disabled."
+
+# The managed browser's display: without one OpenClaw launches Chromium headless, and Cloudflare blocks HeadlessChrome.
+fresh; acc rehearsal "$LAN"
+check "the display unit is asked of systemd" log_re '^systemctl --user is-active openclaw-xvfb\.service \|'
+check "the headless decision is asked of the gateway's browser status" log_re '^openclaw browser status \|'
+item_with rehearsal "$I_BROWSER" browser 'running: true
+headless: true (linux-display-fallback)' FAIL
+check "  ... pointing at the gateway's display drop-in" out_re 'DISPLAY.*browser-display\.conf'
+item_with rehearsal "$I_BROWSER" browser 'headless: true (config)' FAIL
+item_with rehearsal "$I_BROWSER" browser $'running: true\n\033[32mheadless: false (default)\033[0m' PASS
+item_with rehearsal "$I_BROWSER" browser 'headless: false (env)' PASS
+both_ways rehearsal "$I_BROWSER" browser 'headless: true (linux-display-fallback)'
+fresh; export FAKE_OUT_xvfb=inactive FAKE_RC_xvfb=3; acc rehearsal "$LAN"
+check "$I_BROWSER: an inactive Xvfb unit -> FAIL, the rest PASS" only_fails "$I_BROWSER" $((n_reh - 1))
+check "  ... naming the unit and its state" out_re 'openclaw-xvfb\.service is inactive'
 
 # The guard replay and the refusal, on the installed guard with the committed fixture.
 fresh; acc rehearsal "$LAN"

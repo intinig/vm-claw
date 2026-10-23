@@ -14,13 +14,13 @@ Isolation properties, each enforced in `lima/claw.yaml` or by provisioning and e
 - Exactly one port forward: guest `127.0.0.1:18789` to host `127.0.0.1:18789`, then a catch-all ignore (Lima forwards every listening port by default). The appliance face connects to `ws://127.0.0.1:18789` through it.
 - NAT only: the guest has no LAN address.
 - Guest egress firewall (nftables): RFC1918 and link-local are dropped; loopback, established traffic, DNS and DHCP to Lima's gateway, the internet and Tailscale's `100.64.0.0/10` are allowed.
-- No GUI, so no clipboard. `sshd` is key-only.
+- No GUI, so no clipboard: the browser's display is a virtual framebuffer inside the guest (Xvfb), shown nowhere. `sshd` is key-only.
 - Backups leave the VM by a host-to-guest pull only; the guest has no write access to the host.
 
 Two accounts in the guest (from the switch on; before it the bot's units run as `admin`):
 
 - `admin` is Lima's login and maintenance user: `limactl shell`, `ssh admin@<name>` over Tailscale, provisioning. It has passwordless sudo (Lima's cloud-init) and its home is `/Users/admin`. It owns no bot data and no bot units.
-- `sebastian` is the bot: UID and GID 2000, home `/home/sebastian` at mode 700, password locked, its own group only, no sudo, no SSH login (`DenyUsers sebastian`, no `authorized_keys`). The gateway, the agent's tools, the listener guard and the nightly backup run as its systemd user units; linger starts them at boot without a login. It owns `~/.openclaw`, `~/brain` (the vault, with its deploy key in `~/.ssh`), `~/.wacli`, `~/ops` and `~/backups`.
+- `sebastian` is the bot: UID and GID 2000, home `/home/sebastian` at mode 700, password locked, its own group only, no sudo, no SSH login (`DenyUsers sebastian`, no `authorized_keys`). The gateway, the agent's tools, the browser's virtual display (Xvfb), the listener guard and the nightly backup run as its systemd user units; linger starts them at boot without a login. It owns `~/.openclaw`, `~/brain` (the vault, with its deploy key in `~/.ssh`), `~/.wacli`, `~/ops` and `~/backups`.
 - The bot account never gets an SSH login from an import either. `import.sh` refuses a pre-existing symlinked `~/.ssh`, and a symlink at or under `.ssh` in another home's archive. From another home's archive only `ocsb_vault`, `ocsb_vault.pub`, `config` and `known_hosts` land in `~/.ssh`; `authorized_keys` is never installed, and one already in the bot's `~/.ssh` makes the import refuse.
 - The bot cannot become root, so the egress firewall holds against the agent too: only root can change the `inet claw` table. `tests/acceptance.sh` proves both on every run (the privilege item, "cannot become root or touch the firewall", passes the firewall half only on a real "Operation not permitted" denial from `nft`; a missing table or a broken `nft` proves nothing and fails).
 - Tailscale's operator is `sebastian`, so the gateway manages its own Serve claim (`gateway.tailscale.mode=serve`) without root. `tailscaled` stays a root service.
@@ -51,6 +51,7 @@ migrate/lib/home-roots.sh                the live-configuration roots that impor
 migrate/rehome.sh                        the in-place move to the bot account: prepare | switch | verify | retire | rollback
 ops/listener-guard/                      stranded-listener guard, its systemd user units, a replay fixture
 ops/backup/                              guest nightly backup, its units, backup-health.mjs
+ops/browser-display/                     the managed browser's Xvfb unit and the gateway's DISPLAY drop-in
 ops/lib/dotenv-token.sh                  shared parser for the bootstrap token in ~/.openclaw/.env
 tests/isolation-check.sh                 host-side: mounts, forwards, no LAN address
 tests/firewall-check.sh                  guest-side: LAN blocked, internet + DNS OK
@@ -175,7 +176,11 @@ The cutover from Tart (about 6 minutes of downtime) ran as admin: the old VM's `
 
 ### Reboots
 
-The host auto-logs in and `limactl autostart enable claw` starts the VM at login, so a host reboot or power cut recovers unattended. The bot's linger starts its gateway, guard and nightly timer without a login. The gateway unit restarts on failure, and the listener guard restarts it when the WhatsApp listener is stranded.
+The host auto-logs in and `limactl autostart enable claw` starts the VM at login, so a host reboot or power cut recovers unattended. The bot's linger starts its gateway, Xvfb, guard and nightly timer without a login. The gateway unit restarts on failure, and the listener guard restarts it when the WhatsApp listener is stranded.
+
+### Browser
+
+With no display, OpenClaw launches its managed Chromium headless, and headless Chromium's user agent says `HeadlessChrome`, which Cloudflare's challenge page blocks. So the browser runs headed on a virtual display: the bot's `openclaw-xvfb.service` serves `:99`, and the drop-in `~/.config/systemd/user/openclaw-gateway.service.d/browser-display.conf` gives the gateway `DISPLAY=:99` and orders it after Xvfb. OpenClaw writes `openclaw-gateway.service` itself (`gateway install`, doctor repairs); the drop-in is a separate file and survives that. `import.sh` installs both; `host/claw.sh sebastian -- openclaw browser status` must say `headless: false`, and the acceptance item "managed browser has a display" checks it. Only the `openclaw` profile works in the guest: `user` and `chrome` attach to a desktop Chrome, which the guest does not have. A challenge that wants a click (interactive Turnstile) still stops it.
 
 ### Tests
 
