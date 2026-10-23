@@ -171,3 +171,18 @@ At cutover, run the same cleanup on the old VM with its gateway stopped, before 
 | `retire` (2026-10-16) | rc 0: 13 items and 5 unit files to `/var/lib/claw-retired-admin-<date>/` (root, 700); admin's `~/.ssh` holds only `authorized_keys`; admin `Linger=no`. Acceptance final afterwards: every automated item PASS. |
 | Retired copy deleted (2026-10-16) | The owner chose not to wait the 14 days. Before: one retired copy, acceptance final PASS. Deleted the retired copy, the bot's `claw-import`, admin's `~/vm-claw` and `~/pre-rehome-stale/` (the originals of the 2026-10-05 home-relative fix). After: `/var/lib` holds only `claw-rehome`; admin's home holds its shell dotfiles, `.ssh` (`authorized_keys` only) and `.cache`, `.config`, `.local`, `.npm`. Of these, `.config/op` (the 1Password CLI's state from when the bot ran as admin), `.local/bin/yt-dlp`, `.cache/openclaw*` and `.npm` are admin-era bot leftovers; the bot has its own copies. |
 | Tart retired (2026-10-16, Task 14 of the 2026-09-30 plan) | `tart delete` of the old VM, its pre-Linux clone and the cached base image (about 175 GB); the old VM's and the gateway tunnel's disabled launch agents and the Tart-era safety exports removed; the `vmclaw` Go CLI and the Tart docs removed from the repo. |
+
+## The browser's display (2026-10-23, production)
+
+- **Symptom.** Since the cutover every page behind a Cloudflare challenge stayed on "Just a moment…" in the managed browser. On the Tart VM, where Chrome ran headed, the same kind of challenge cleared on its own.
+- **Cause.** The guest has no display, so OpenClaw launched the `openclaw` profile headless: `openclaw browser status` said `headless: true (linux-display-fallback)`, and the CDP endpoint's `/json/version` reported the user agent `… HeadlessChrome/155.0.0.0 …`. The `user` (Chrome MCP existing-session) and `chrome` (extension relay) profiles fail in the guest by design: they attach to a desktop Chrome.
+- **Probe** (throwaway Chromium 155 in the guest, scratch profile, its own debugging port, two Cloudflare-fronted sites, both orders):
+
+  | Mode | Result |
+  |---|---|
+  | headless, stock user agent | challenge page after 30 s, both sites |
+  | headless, `--user-agent` without `Headless` | page loaded in 3 s, both sites |
+  | headed under `Xvfb :98` | page loaded in 3 s, both sites; user agent `Chrome/155.0.0.0` |
+
+- **Fix, applied by hand on production as the bot** (what `import.sh` now does): `xvfb` installed; `openclaw-xvfb.service` enabled; the drop-in `openclaw-gateway.service.d/browser-display.conf` (`DISPLAY=:99`, after Xvfb); the gateway restarted with the guard timer stopped. Afterwards `openclaw browser status` said `headless: false (default)`, the renderer was Mesa llvmpipe (it had been SwiftShader), and the managed browser loaded a Cloudflare-fronted page in 3 s. WhatsApp reconnected within about 20 s.
+- `/proc/<gateway pid>/environ` is unreadable even to the bot; read the gateway's environment with `systemctl --user show -p Environment openclaw-gateway.service`.

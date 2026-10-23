@@ -319,6 +319,16 @@ check_memory_paths() {
   [ -z "$bad" ] || { WHY="memory paths outside $HOME:$bad"; return 1; }
 }
 
+# With no display OpenClaw launches its browser headless, and Cloudflare blocks HeadlessChrome (ops/browser-display).
+# The status names where the headless setting came from; it answers without the browser running.
+check_browser_display() {
+  run systemctl --user is-active openclaw-xvfb.service
+  [ "$RC" -eq 0 ] || { WHY="openclaw-xvfb.service is ${OUT:-unknown} (systemctl exit $RC)"; return 1; }
+  produce openclaw browser status || return 1
+  strip_ansi
+  matches '^headless: false' "the managed browser would run headless: is DISPLAY set by the gateway's drop-in openclaw-gateway.service.d/browser-display.conf?"
+}
+
 # timeout: an unanswered ssh prompt or a black-holed network must not hang the whole run.
 check_vault() {
   produce timeout 60 git -C "$HOME/brain/vault" ls-remote origin HEAD || return 1
@@ -357,6 +367,7 @@ item "listener guard replays a stranded-listener log and would restart" check_gu
 item "listener guard refuses --now without --dry-run" check_guard_refuses
 item "gateway log dir belongs to the bot account (the guard reads it)" check_gateway_log
 item "memory index paths are under this home" check_memory_paths
+item "managed browser has a display (headed, not the headless fallback)" check_browser_display
 item "vault remote reachable with deploy key" check_vault
 # The probe sessions go whatever the probes did (item never stops at a FAIL); the EXIT trap covers an early end.
 delete_probe_sessions

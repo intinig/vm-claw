@@ -24,6 +24,7 @@ chk "tailscale"                  "tailscale version"
 chk "wacli $WACLI_VERSION"       "wacli --version | grep -qF '$WACLI_VERSION'"
 chk "sag $SAG_VERSION"           "sag --version 2>&1 | grep -qF '$SAG_VERSION'"
 chk "chromium"                   "chromium --version"
+chk "xvfb (the browser's display)" "[ -x /usr/bin/Xvfb ]"
 chk "gh"                         "gh --version"
 # migrate/state-paths.py (a cross-home import and rehome.sh verify) needs it; provisioning installs it.
 chk "python3 3.9+ with sqlite3 (the state-path migration)" "python3 -c 'import sqlite3, sys; sys.exit(sys.version_info < (3, 9))'"
