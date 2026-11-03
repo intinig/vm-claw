@@ -91,7 +91,7 @@ export OPENCLAW_GATEWAY_TOKEN="$gw_token"
 
 # --- plumbing -----------------------------------------------------------------------------------------
 fail=0
-OUT=""; ERR=""; RC=0; WHY=""
+OUT=""; ERR=""; RC=0; WHY=""; DEFER=""
 # run CMD...: OUT = its stdout, ERR = its stderr, RC = its exit status. Stdin is closed: no command may
 # wait on the terminal.
 run() {
@@ -122,11 +122,14 @@ show_failure() {
   text=$(scrub "$OUT"$'\n'"$ERR"$'\n'"$WHY")
   printf '%s\n' "$text" | sed '/^[[:space:]]*$/d' | tail -5 | cut -c1-200 | sed 's/^/       /'
 }
-# item NAME CHECK [ARGS]: PASS or FAIL, and on to the next whatever happened.
+# item NAME CHECK [ARGS]: PASS or FAIL, and on to the next whatever happened. A check that cannot judge here (no
+# evidence either way, not a fault) sets DEFER to what a person should do instead and fails: the item is MANUAL.
+# An explicit variable, not an exit status, so a check's own error can never pass for a hand-over.
 item() {
   local name=$1; shift
-  OUT=""; ERR=""; RC=0; WHY=""
+  OUT=""; ERR=""; RC=0; WHY=""; DEFER=""
   if "$@"; then echo "PASS   $name"
+  elif [ -n "$DEFER" ]; then echo "MANUAL $name"; printf '%s\n' "$DEFER" | sed 's/^/       /'
   else echo "FAIL   $name"; show_failure; fail=$((fail + 1)); fi
 }
 manual() { echo "MANUAL $1"; }
@@ -299,7 +302,13 @@ check_gateway_log() {
 check_memory_paths() {
   local p n=0 bad="" found abs path_re='[^[:space:]"=,()]*/\.openclaw[^[:space:]",()]*'
   local abs_re='(^|[[:space:]"=,(])/(Users|home)/[^[:space:]",()]*'
-  produce openclaw memory status --agent main || return 1
+  if ! produce openclaw memory status --agent main; then
+    # From 2026.10.10 memory status runs only offline: with the gateway up it refuses and prints no path.
+    if grep -qF "requires exclusive offline state ownership" <<<"$ERR"; then
+      DEFER="memory status answers only with the gateway stopped: then run openclaw memory status --agent main; every path must be under $HOME"
+    fi
+    return 1
+  fi
   strip_ansi
   found=$(grep -oE -- "$path_re" <<<"$OUT" || true)
   while IFS= read -r p; do
