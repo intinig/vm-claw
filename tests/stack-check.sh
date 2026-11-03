@@ -13,7 +13,10 @@ here="$(cd "$(dirname "$0")/.." && pwd)"
 repo_path="${STACK_CHECK_REPO:-$CLAW_REPO}"; repo_owner="${STACK_CHECK_REPO_OWNER:-root}"
 fail=0
 chk() { if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
-chk "node $NODE_MAJOR"           "node --version | grep -q '^v$NODE_MAJOR\.'"
+# Node: the pinned major, at or above the floor within it.
+nv=$(node_installed_version || true)
+if [[ $nv == "$NODE_MAJOR".* ]] && version_ge "$nv" "$NODE_MIN_VERSION"; then echo "ok   node $nv (major $NODE_MAJOR, floor $NODE_MIN_VERSION)"
+else echo "FAIL node ${nv:-unreadable} (want $NODE_MAJOR.x at least $NODE_MIN_VERSION)"; fail=1; fi
 # OpenClaw updates itself (`openclaw update`), so the pin is a floor: at least the pin passes, and the
 # installed version is shown. Older or unreadable fails.
 oc=$(openclaw_installed_version || true)

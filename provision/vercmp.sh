@@ -30,3 +30,8 @@ version_ge() {
 openclaw_installed_version() {
   openclaw --version 2>/dev/null | sed -n 's/^OpenClaw \([^[:space:]]*\).*$/\1/p' | head -1
 }
+
+# node_installed_version: node's version without the v ("v24.22.1" -> 24.22.1); empty if unreadable.
+node_installed_version() {
+  node --version 2>/dev/null | sed -n 's/^v\([0-9][0-9.]*\)$/\1/p' | head -1
+}

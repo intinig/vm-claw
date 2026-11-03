@@ -66,9 +66,12 @@ apt_ensure nodejs 1password-cli tailscale chromium gh
 # The agent's image and media tooling (system packages, never inside the OpenClaw install): Pillow and numpy for
 # python3, ImageMagick (Debian's restrictive policy.xml), SVG to PNG, ffmpeg, and fonts for lettering.
 apt_ensure python3-pil python3-numpy imagemagick librsvg2-bin ffmpeg fonts-liberation fonts-dejavu-extra fonts-comic-neue
-# Fails closed on a wrong major (e.g. Debian's own nodejs 20 when the NodeSource index is missing);
-# the apply upgrades to the NodeSource candidate, and if the repo is not in use the check still fails.
-step "node $NODE_MAJOR" "node --version | grep -q \"^v${NODE_MAJOR}\.\"" \
+# Checks run in a child bash: the version helpers they call are exported once, here.
+export -f vercmp version_ge node_installed_version openclaw_installed_version
+# Fails closed on a wrong major (e.g. Debian's own nodejs 20 when the NodeSource index is missing) or a build below
+# the floor; the apply upgrades to the NodeSource candidate, and if the repo is not in use the check still fails.
+step "node $NODE_MAJOR >= $NODE_MIN_VERSION" \
+  "node --version | grep -q \"^v${NODE_MAJOR}\.\" && version_ge \"\$(node_installed_version)\" $NODE_MIN_VERSION" \
   "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs"
 
 # --- pinned release binaries -------------------------------------------------------------
@@ -104,7 +107,6 @@ SUMMARIZE_ALLOW_SCRIPTS="protobufjs,@google/genai"
 # The pin is a floor, never a ceiling: `openclaw update` moves the CLI (and migrates its state databases) past
 # it, and a re-provision must not take a running gateway back down. Install only when the CLI is absent or
 # older than the pin; a newer one is left alone, with a notice.
-export -f vercmp version_ge openclaw_installed_version
 oc_have=$(openclaw_installed_version || true)
 if [ -n "$oc_have" ] && [ "$(vercmp "$oc_have" "$OPENCLAW_VERSION" || true)" = gt ]; then
   echo "notice  openclaw: installed $oc_have is newer than the pin $OPENCLAW_VERSION; not downgrading; bump OPENCLAW_VERSION in provision/versions.env"
