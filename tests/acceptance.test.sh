@@ -298,6 +298,12 @@ only_fails() { # only_fails <item> <PASS count expected>: exit 1, that item is t
     && [ "$(grep -c '^PASS ' "$t/out")" -eq "$2" ] \
     && ! out_re 'automated items PASS$'
 }
+only_manual() { # only_manual <item> <PASS count expected>: exit 0, that item is MANUAL (not PASS, not FAIL), every other item passed
+  [ "$rc" -eq 0 ] \
+    && ! grep -q '^FAIL ' "$t/out" && out_has "MANUAL $1" && ! out_has "PASS   $1" \
+    && [ "$(grep -c '^PASS ' "$t/out")" -eq "$2" ] \
+    && out_re 'automated items PASS$'
+}
 both_ways() { # both_ways <mode> <item> <key> <stdout that must not match>
   local mode=$1 name=$2 key=$3 bad=$4 want
   if [ "$mode" = final ]; then want=$((n_fin - 1)); else want=$((n_reh - 1)); fi
@@ -720,6 +726,13 @@ sessionsDir: /home/other/x" FAIL
 item_with rehearsal "$I_MEMORY" memory "workspaceDir: $t/home/.openclaw/workspace
 sessionsDir: $t/home/data/sessions" PASS
 both_ways rehearsal "$I_MEMORY" memory "Memory search is disabled."
+# From 2026.10.10 `memory status` answers only offline: with the gateway up it refuses on stderr, exit 1, and prints
+# no path. That is no evidence either way, so the item hands over to a person instead of failing a healthy guest.
+fresh; export FAKE_OUT_memory="" FAKE_RC_memory=1 \
+  FAKE_ERR_memory="Cannot admit memory.cli for memory stores in state root $t/home/.openclaw: This operation requires exclusive offline state ownership. No local mutation was attempted. Inspect openclaw gateway status. Update the Gateway or fix authentication and retry. To run offline, stop the Gateway through its service owner, wait for ownership to release, then rerun this exact command."
+acc rehearsal "$LAN"
+check "$I_MEMORY: memory status answers only offline (gateway up) -> MANUAL, the rest PASS, exit 0" only_manual "$I_MEMORY" $((n_reh - 1))
+check "  ... saying how to check it offline" out_re 'gateway stopped.*openclaw memory status --agent main'
 
 # The managed browser's display: without one OpenClaw launches Chromium headless, and Cloudflare blocks HeadlessChrome.
 fresh; acc rehearsal "$LAN"

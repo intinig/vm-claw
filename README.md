@@ -160,13 +160,21 @@ The cutover from Tart (about 6 minutes of downtime) ran as admin: the old VM's `
   host/claw.sh sebastian -- systemctl --user is-active openclaw-gateway.service openclaw-listener-guard.service   # both: inactive or failed
   host/claw.sh shell -- bash -c 'ps -eo user:12=,args= | grep -E "openclaw|guard\.mjs" | grep -v grep'   # must print nothing
   host/claw.sh provision                                    # the pin is a floor: installs the newer pin, never downgrades
-  host/claw.sh sebastian -- openclaw doctor --non-interactive   # only with the gateway proven down: doctor writes
+  host/claw.sh sebastian -- openclaw doctor --repair        # only with the gateway proven down: doctor writes; it restarts the gateway when done
+  host/claw.sh sebastian -- systemctl --user stop openclaw-gateway.service   # down again, proven as above
   host/claw.sh sebastian -- openclaw update repair --yes --no-restart   # updates the bot's plugins to the core's version and finishes the migrations; read its output first
+  host/claw.sh sebastian -- openclaw memory status --agent main   # offline only: every path under /home/sebastian (acceptance cannot check it live)
+  host/claw.sh sebastian -- openclaw doctor --repair        # again, until a pass has nothing left to repair
+  host/claw.sh sebastian -- openclaw doctor --lint --json   # read-only; the loop ends at "ok": true with no findings
   host/claw.sh sebastian -- systemctl --user start openclaw-gateway.service openclaw-listener-guard.timer
   host/claw.sh sebastian -- bash /opt/vm-claw/tests/acceptance.sh final <lan-router-ip>
   ```
 
-  Before an upgrade, trial-install the new pin as the bot into a scratch prefix with provisioning's `--strict-allow-scripts --allow-scripts=…` list (a global install: `npm install -g --prefix <dir>`, with `<dir>/lib` created first), so a newly blocked install script fails there and not in the downtime. `doctor --non-interactive` applies only safe migrations: the managed plugins (`~/.openclaw/npm`, the bot's) stay on the old version until `update repair` updates them. Do not pass `--accept-capabilities` without reviewing what widened. Any install record or path still pointing into admin's home makes the repair's finalize step fail with `EACCES`; on 2026-10-13 that was the dropped iMessage plugin (`openclaw plugins uninstall imessage --force`).
+  Before an upgrade, trial-install the new pin as the bot into a scratch prefix with provisioning's `--strict-allow-scripts --allow-scripts=…` list (a global install: `npm install -g --prefix <dir>`, with `<dir>/lib` created first), so a newly blocked install script fails there and not in the downtime. The doctor step is `--repair`, not `--non-interactive`: `--non-interactive` applies only safe migrations, and from 2026.10.10 it stops at `Failing check session-entry-state (step-refused)`, because the agent databases need a session-identity migration. Its message hides the reason; `doctor --lint --json` names it. `doctor --repair` restarts the gateway at the end, even one it did not stop, so stop it again before `update repair`; the guard timer stays off until the last line. The managed plugins (`~/.openclaw/npm`, the bot's) stay on the old version until `update repair` updates them. From 2026.10.10 `openclaw memory status` runs only with the gateway stopped, so acceptance reports "memory index paths are under this home" as MANUAL; the offline line above is that check.
+
+  Do not pass `--accept-capabilities` without reviewing what widened. Any install record or path still pointing into admin's home makes the repair's finalize step fail with `EACCES`; on 2026-10-13 that was the dropped iMessage plugin (`openclaw plugins uninstall imessage --force`).
+
+  On 2026.10.10 a clean lint still leaves doctor-only warnings that are not faults: each agent database "still requires its existing native owner" (doctor cannot take that path inside its own maintenance scope), `skill-workshop-tool-policy` cannot verify the tool authority of agent `main`, codex "uses OpenClaw APIs that retire on Oct 1, 2026", the completion cache (the CLI cannot register codex), the gateway unit's unrecognized `Wants`/`After` (the Xvfb drop-in), and `/Users/admin` backup scratch it cannot read.
 
   After a rollback of the switch, acceptance run as admin (`host/claw.sh shell --`) FAILs exactly one item, "privilege: the bot account cannot become root or touch the firewall", by design: admin has passwordless sudo. Expect that one and nothing else.
 

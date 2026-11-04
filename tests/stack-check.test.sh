@@ -1,20 +1,27 @@
 #!/bin/bash
-# Tests for the openclaw line of tests/stack-check.sh, with a fake openclaw and a fixture pin. The other lines
-# look at the real machine (node, op, /opt/homebrew links) and are not asserted here.
+# Tests for the node and openclaw lines of tests/stack-check.sh, with a fake node, a fake openclaw and a fixture
+# pin. The other lines look at the real machine (op, /opt/homebrew links) and are not asserted here.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/bin"
-printf 'OPENCLAW_VERSION=2026.9.7\nNODE_MAJOR=24\nWACLI_VERSION=0\nSAG_VERSION=0\n' > "$t/versions.env"
+printf 'OPENCLAW_VERSION=2026.9.7\nNODE_MAJOR=24\nNODE_MIN_VERSION=24.22.1\nWACLI_VERSION=0\nSAG_VERSION=0\n' > "$t/versions.env"
 cat > "$t/bin/openclaw" <<'EOS'
 #!/bin/bash
 [ -z "${FAKE_RC:-}" ] || exit "$FAKE_RC"
 echo "${FAKE_OUT:-OpenClaw 2026.9.7 (c074824)}"
 EOS
-chmod +x "$t/bin/openclaw"
+cat > "$t/bin/node" <<'EOS'
+#!/bin/bash
+echo "${FAKE_NODE:-v24.22.1}"
+EOS
+chmod +x "$t/bin/openclaw" "$t/bin/node"
 pass=0; fail=0
 line() { # line <openclaw --version output> [rc]: the openclaw line stack-check prints
   FAKE_OUT="$1" FAKE_RC="${2:-}" PATH="$t/bin:$PATH" VERSIONS_ENV="$t/versions.env" bash "$here/stack-check.sh" 2>&1 | grep -E '^(ok  |FAIL) openclaw' || true
+}
+nline() { # nline <node --version output>: the node line stack-check prints
+  FAKE_NODE="$1" PATH="$t/bin:$PATH" VERSIONS_ENV="$t/versions.env" bash "$here/stack-check.sh" 2>&1 | grep -E '^(ok  |FAIL) node ' || true
 }
 want() { # want <description> <got> <ERE>
   if printf '%s' "$2" | grep -Eq -- "$3"; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: $1 (got: $2)"; fi
@@ -26,6 +33,11 @@ want "an older version fails and shows it"               "$(line 'OpenClaw 2026.
 want "an older multi-digit version fails"                "$(line 'OpenClaw 2025.12.30 (c074824)')" '^FAIL openclaw'
 want "an unreadable version fails"                       "$(line 'something else')"                '^FAIL openclaw'
 want "a failing openclaw fails"                          "$(line 'OpenClaw 2026.9.7 (x)' 1)"       '^FAIL openclaw'
+want "node at the floor passes and shows the version"    "$(nline v24.22.1)"  '^ok   node 24\.22\.1'
+want "node above the floor passes"                       "$(nline v24.22.2)"  '^ok   node 24\.22\.2'
+want "node below the floor fails and shows it"           "$(nline v24.21.0)"  '^FAIL node 24\.21\.0'
+want "node on another major fails, even if newer"        "$(nline v26.12.1)"  '^FAIL node 26\.12\.1'
+want "an unreadable node version fails"                  "$(nline 'oops')"    '^FAIL node unreadable'
 # --- the bot account, the deployed repo and the Tailscale operator (spec 2026-10-02 §1) ---
 # Fakes for what those lines ask: getent, id -Gn, loginctl, tailscale, sshd, stat, passwd, and sudo, which runs the
 # rest here with the bot's home mapped onto a scratch dir ($FAKE_BOT_HOME) and answers `-l -U` itself.
