@@ -63,6 +63,8 @@ step "1password repo" "apt-cache policy 1password-cli | grep -F downloads.1passw
 step "tailscale repo" "apt-cache policy tailscale | grep -F pkgs.tailscale.com/stable/debian" \
   "curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list && apt-get update"
 apt_ensure nodejs 1password-cli tailscale chromium gh
+# The managed browser's virtual display (ops/browser-display): headless Chromium is blocked by Cloudflare.
+apt_ensure xvfb
 # The agent's image and media tooling (system packages, never inside the OpenClaw install): Pillow and numpy for
 # python3, ImageMagick (Debian's restrictive policy.xml), SVG to PNG, ffmpeg, and fonts for lettering.
 apt_ensure python3-pil python3-numpy imagemagick librsvg2-bin ffmpeg fonts-liberation fonts-dejavu-extra fonts-comic-neue

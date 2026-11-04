@@ -159,6 +159,9 @@ case "$*" in
     if [ "$3" = "${FAKE_FAILED_UNIT:-none}" ]; then echo failed; exit 3; fi
     echo inactive; exit 3 ;;
   "--user cat "*) echo "[Service]" ;;
+  # The gateway must start with its display: record whether the drop-in that gives it DISPLAY is in place by then.
+  "--user enable --now openclaw-gateway.service")
+    echo "gateway-enable dropin=$([ -f "$IMPORT_HOME/.config/systemd/user/openclaw-gateway.service.d/browser-display.conf" ] && echo yes || echo no)" >> "$FAKE_LOG" ;;
 esac
 exit 0
 EOF
@@ -337,10 +340,20 @@ check "final mode installs the backup-health check next to the nightly script" \
 check "final mode installs both nightly units" \
   bash -c '[ -f "$1/.config/systemd/user/openclaw-nightly-backup.service" ] && [ -f "$1/.config/systemd/user/openclaw-nightly-backup.timer" ]' _ "$t/home"
 check "final mode enables the nightly timer" ev 'enable --now openclaw-nightly-backup\.timer$'
+# The managed browser's display (ops/browser-display): headless Chromium is blocked by Cloudflare.
+check "the Xvfb unit is installed as the repo has it" \
+  cmp -s "$t/home/.config/systemd/user/openclaw-xvfb.service" "$here/../ops/browser-display/openclaw-xvfb.service"
+check "the gateway's display drop-in is installed as the repo has it" \
+  cmp -s "$t/home/.config/systemd/user/openclaw-gateway.service.d/browser-display.conf" "$here/../ops/browser-display/browser-display.conf"
+check "Xvfb is enabled after the gateway install (which rewrites the unit) and before the gateway starts" \
+  in_order 'openclaw gateway install' '^systemctl --user enable --now openclaw-xvfb\.service$' '^systemctl --user enable --now openclaw-gateway\.service$'
+check "the gateway starts with its display drop-in already in place" ev '^gateway-enable dropin=yes$'
 fresh
 expect 0 "a drill installs no nightly backup" run_import drill "$t/full"
 check "a drill leaves out the nightly script, the health check, its parser and its timer" \
   bash -c '[ ! -e "$1/ops/backup/backup-health.mjs" ] && [ ! -e "$1/ops/backup" ] && [ ! -e "$1/ops/lib" ] && ! grep -q "openclaw-nightly-backup" "$2"' _ "$t/home" "$t/ev"
+check "a drill installs the browser display too, before the gateway starts" \
+  bash -c '[ -f "$1/.config/systemd/user/openclaw-xvfb.service" ] && grep -q "^gateway-enable dropin=yes$" "$2"' _ "$t/home" "$t/ev"
 
 # Partial failure (npm ci, the network): nothing armed is left behind and cron is already off.
 fresh
@@ -424,6 +437,11 @@ cp "$here/import.sh" "$t/norepo/migrate/"; : > "$t/norepo/ops/listener-guard/gua
 fresh
 expect_msg 1 "ops/lib/dotenv-token.sh missing from the repo checkout" "a repo checkout without the shared token parser is refused" env IMPORT_DRY=0 FAKE_LOG="$t/ev" PATH="$t/bin:$PATH" bash "$t/norepo/migrate/import.sh" drill "$t/full"
 check "that refused import touched nothing" test ! -e "$t/home/.openclaw"
+# Likewise the browser display's units: a checkout without them is refused up front, not at the copy after the restore.
+mkdir -p "$t/nodisplay"; (cd "$here/.." && tar cf - migrate ops) | tar xf - -C "$t/nodisplay"; rm -r "$t/nodisplay/ops/browser-display"
+fresh
+expect_msg 1 "ops/browser-display/openclaw-xvfb.service missing from the repo checkout" "a repo checkout without the browser display units is refused" env IMPORT_DRY=0 FAKE_LOG="$t/ev" PATH="$t/bin:$PATH" bash "$t/nodisplay/migrate/import.sh" drill "$t/full"
+check "that refused import touched nothing (browser display)" test ! -e "$t/home/.openclaw"
 
 # A Linux nightly carries the token in ~/.openclaw/.env (the CLI and service load it themselves), not in
 # the macOS service-env file. import.sh must read it, and only read it: a dotenv is data, never code.

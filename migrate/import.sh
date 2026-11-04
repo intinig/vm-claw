@@ -66,7 +66,10 @@ systemctl --user show-environment >/dev/null 2>&1 \
 [ -f "$repo/ops/lib/dotenv-token.sh" ] || die "ops/lib/dotenv-token.sh missing from the repo checkout"
 # shellcheck source=ops/lib/dotenv-token.sh
 . "$repo/ops/lib/dotenv-token.sh"
-for f in migrate/homepaths.mjs migrate/scan-refs.mjs migrate/lib/home-roots.sh migrate/state-paths.py; do [ -f "$repo/$f" ] || die "$f missing from the repo checkout"; done
+for f in migrate/homepaths.mjs migrate/scan-refs.mjs migrate/lib/home-roots.sh migrate/state-paths.py \
+  ops/browser-display/openclaw-xvfb.service ops/browser-display/browser-display.conf; do
+  [ -f "$repo/$f" ] || die "$f missing from the repo checkout"
+done
 # shellcheck source=migrate/lib/home-roots.sh
 . "$repo/migrate/lib/home-roots.sh"
 # The archive's home, read from the listing of the OpenClaw backup (<root>/payload/posix<home>/.openclaw/...), so
@@ -432,6 +435,13 @@ systemctl --user stop "$GATEWAY_UNIT"
 openclaw doctor --fix --non-interactive --allow-exec --yes
 systemctl --user reset-failed "$GATEWAY_UNIT" 2>/dev/null || true
 systemctl --user cat "$GATEWAY_UNIT" >/dev/null 2>&1 || die "gateway install did not create $GATEWAY_UNIT (update GATEWAY_UNIT here and GUARD_RESTART for the guard)"
+# The managed browser needs a display: without one OpenClaw launches Chromium headless, and Cloudflare blocks
+# HeadlessChrome. The drop-in gives the gateway DISPLAY; installed after `gateway install`, which rewrites the unit.
+install -d "$H/.config/systemd/user/$GATEWAY_UNIT.d"
+cp "$repo/ops/browser-display/openclaw-xvfb.service" "$H/.config/systemd/user/"
+cp "$repo/ops/browser-display/browser-display.conf" "$H/.config/systemd/user/$GATEWAY_UNIT.d/"
+systemctl --user daemon-reload
+systemctl --user enable --now openclaw-xvfb.service
 systemctl --user enable --now "$GATEWAY_UNIT"
 
 # --- command automations: argv[0] to Debian paths, via OpenClaw's own CLI -------------------
