@@ -160,6 +160,28 @@ At cutover, run the same cleanup on the old VM with its gateway stopped, before 
     - two historical Workshop workspace records under `/Users/admin`, kept for manual review (the bot cannot read admin's home; accepted);
     - the codex plugin's data upgrade reported as unfinished. The plugin is enabled at 2026.10.2.
 
+## OpenClaw 2026.10.2 → 2026.10.10 and Node 24.21.0 → 24.22.2 (2026-11-03, production, as the bot)
+
+- **Before the downtime.**
+  - Trial install of 2026.10.10 as the bot into a scratch global prefix, with the strict allow-scripts list: npm exit 0, 360 packages.
+  - The release notes since 2026.10.6 warn on Node below 24.22.1 (the October 2026 eMudhra compromise). The guest had 24.21.0, and provisioning checked only the major, so `NODE_MIN_VERSION` was added.
+  - A nightly as the bot (archive verification passed): the way back.
+  - WhatsApp and wacli were already logged out (since 2026-10-30), so the WhatsApp items could not pass.
+- **Downtime: about 9 minutes.**
+  1. Units stopped and proven down, and no OpenClaw process left.
+  2. `provision`: `changed=2` (`node 24 >= 24.22.1` to 24.22.2 from NodeSource, `openclaw >= 2026.10.10`).
+  3. `doctor --non-interactive` exited 1: `Failing check session-entry-state (step-refused)`. `doctor --lint --json` named the cause: the three agent databases (main, vera, openclaw) at schema 24 need a session-identity migration that only `doctor --fix` runs.
+  4. `doctor --repair` migrated them, retired the 2026.10.2 plugin generations and restarted the gateway on its own.
+  5. With the gateway stopped again, `update repair --yes --no-restart` completed codex's deferred state migration ("Update finalization completed with warnings").
+  6. A second `doctor --repair` had nothing new to repair. `doctor --lint --json` reported `"ok": true`, 40 checks, 0 findings.
+- **After.**
+  - `openclaw update status`: up to date, 2026.10.10, last run succeeded. Plugins brave, codex and deepseek at 2026.10.10.
+  - Acceptance final: 13 PASS, 5 FAIL.
+    - Four FAILs were the WhatsApp logout: WhatsApp linked, wacli, harvest health, and the guard replay. With WhatsApp unlinked, the guard now skips: 2026.10.10's `channels status` prints `not linked` for a logged-out session.
+    - "memory index paths are under this home" failed because 2026.10.10's `memory status` runs only offline. Run offline instead: 364/364 files indexed, not dirty, every path under `/home/sebastian`. Acceptance now reports this item as MANUAL.
+  - The face reconnected to the gateway after the last restart.
+  - Remaining doctor-only warnings: README "Upgrades" lists them.
+
 ## Production: the move to the bot account, retire and cleanup (2026-10-06 → 2026-10-16)
 
 | Step | Result |
